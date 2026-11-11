@@ -210,6 +210,8 @@ function ModulePage({ page, label, role }: { page: string; label: string; role: 
     annual_fees: [membersField, { key: 'financial_year', label: 'অর্থবছর', required: true }, { key: 'amount', label: 'ফি-এর পরিমাণ', type: 'number', required: true }, { key: 'payment_date', label: 'পরিশোধের তারিখ', type: 'date', required: true }, { key: 'payment_method', label: 'পরিশোধ পদ্ধতি' }],
     share_registry: [membersField, { key: 'share_value', label: 'শেয়ারের মূল্য', type: 'number', required: true }, { key: 'issue_date', label: 'ইস্যুর তারিখ', type: 'date', required: true }, { key: 'payment_status', label: 'পরিশোধের অবস্থা', type: 'select', options: [{ value: 'unpaid', label: 'অপরিশোধিত' }, { value: 'partial', label: 'আংশিক' }, { value: 'paid', label: 'পরিশোধিত' }] }],
     financial_transactions: [{ key: 'transaction_date', label: 'লেনদেনের তারিখ', type: 'date', required: true }, { key: 'transaction_type', label: 'ধরন', type: 'select', required: true, options: [{ value: 'income', label: 'আয়' }, { value: 'expense', label: 'ব্যয়' }] }, { key: 'category', label: 'খাত', required: true }, { key: 'amount', label: 'পরিমাণ', type: 'number', required: true }, { key: 'description', label: 'বিবরণ', required: true }, { key: 'reference_number', label: 'রেফারেন্স নম্বর' }, { key: 'payment_method', label: 'পরিশোধ পদ্ধতি' }],
+    investments: [{ key: 'title', label: 'বিনিয়োগের নাম', required: true }, { key: 'investment_type', label: 'বিনিয়োগের ধরন', required: true }, { key: 'invested_amount', label: 'বিনিয়োগকৃত অর্থ', type: 'number', required: true }, { key: 'current_value', label: 'বর্তমান মূল্য', type: 'number', required: true }, { key: 'start_date', label: 'শুরুর তারিখ', type: 'date', required: true }, { key: 'maturity_date', label: 'মেয়াদপূর্তির তারিখ', type: 'date' }, { key: 'notes', label: 'বিবরণ' }],
+    qard_hasan_loans: [membersField, { key: 'principal_amount', label: 'ঋণের পরিমাণ', type: 'number', required: true }, { key: 'disbursement_date', label: 'প্রদানের তারিখ', type: 'date', required: true }, { key: 'notes', label: 'বিবরণ' }],
   }
   const columns: Partial<Record<TableKey, { key: string; label: string; money?: boolean }[]>> = {
     members: [{ key: 'member_id', label: 'সদস্য নম্বর' }, { key: 'full_name', label: 'নাম' }, { key: 'mobile', label: 'মোবাইল' }, { key: 'joining_date', label: 'যোগদানের তারিখ' }, { key: 'status', label: 'অবস্থা' }],
@@ -252,13 +254,15 @@ function ModulePage({ page, label, role }: { page: string; label: string; role: 
       result = { error: inserted.error }
       if (!inserted.error && payload.email) {
         const memberEmail = payload.email.trim().toLowerCase()
-        const account = await supabase.from('profiles').select('id').eq('email', memberEmail).maybeSingle()
-        if (account.data?.id) {
+        const account = await supabase.from('profiles').select('id,role').eq('email', memberEmail).maybeSingle()
+        if (account.data?.id && account.data.role === 'member') {
           const linked = await supabase.from('members').update({ auth_user_id: account.data.id }).eq('id', inserted.data.id)
           if (linked.error) setError('সদস্য তৈরি হয়েছে, তবে লগইন অ্যাকাউন্ট যুক্ত হয়নি। Supabase Auth-এ এই ইমেইলের user তৈরি আছে কি না যাচাই করুন।')
         }
       }
     }
+    else if (page === 'investments') result = await supabase.from('investments').insert({ ...payload, invested_amount: Number(payload.invested_amount), current_value: Number(payload.current_value), maturity_date: payload.maturity_date || null, notes: payload.notes || null, status: 'active', created_by: (await supabase.auth.getUser()).data.user?.id })
+    else if (page === 'qard_hasan_loans') result = await supabase.from('qard_hasan_loans').insert({ member_id: payload.member_id, principal_amount: Number(payload.principal_amount), outstanding_amount: Number(payload.principal_amount), disbursement_date: payload.disbursement_date, notes: payload.notes || null, status: 'active', approved_by: (await supabase.auth.getUser()).data.user?.id })
     else if (page === 'monthly_savings') result = await supabase.from('monthly_savings').insert({ ...payload, amount: Number(payload.amount), member_id: payload.member_id, receipt_number: `SWT-MS-${crypto.randomUUID()}`, created_by: (await supabase.auth.getUser()).data.user?.id })
     else if (page === 'annual_fees') result = await supabase.from('annual_fees').insert({ ...payload, amount: Number(payload.amount), receipt_number: `SWT-AF-${crypto.randomUUID()}`, created_by: (await supabase.auth.getUser()).data.user?.id })
     else result = await supabase.from('share_registry').insert({ ...payload, share_value: Number(payload.share_value), member_id: payload.member_id, created_by: (await supabase.auth.getUser()).data.user?.id })
@@ -271,16 +275,76 @@ function ModulePage({ page, label, role }: { page: string; label: string; role: 
     if (!supabase || typeof row.id !== 'string') return
     const address = window.prompt('Supabase Auth-এ তৈরি সদস্যের ইমেইল লিখুন')?.trim()
     if (!address) return
-    const profile = await supabase.from('profiles').select('id').eq('email', address).maybeSingle()
-    if (profile.error || !profile.data) { setError('এই ইমেইলের লগইন অ্যাকাউন্ট পাওয়া যায়নি। আগে Supabase Auth → Users-এ user তৈরি করুন।'); return }
+    const profile = await supabase.from('profiles').select('id,role').eq('email', address.toLowerCase()).maybeSingle()
+    if (profile.error || !profile.data || profile.data.role !== 'member') { setError('এই ইমেইলের সদস্য লগইন অ্যাকাউন্ট পাওয়া যায়নি। আগে Supabase Auth → Users-এ member user তৈরি করুন।'); return }
     const linked = await supabase.from('members').update({ auth_user_id: profile.data.id }).eq('id', row.id)
     if (linked.error) setError('লগইন অ্যাকাউন্ট যুক্ত হয়নি। আবার চেষ্টা করুন।')
     else { await load(); setError('সদস্যের লগইন অ্যাকাউন্ট যুক্ত হয়েছে।') }
   }
+  if (page === 'funds') return <FundModule label={label} />
+  if (page === 'reports') return <ReportModule label={label} />
   if (!tablePages.includes(page as TableKey)) return <><div className="welcome-row"><div><div className="eyebrow">স্বপ্নতরী · ব্যবস্থাপনা</div><h1>{label}</h1><p>এই মডিউলটি প্রস্তুত করা বাকি।</p></div></div><section className="panel module-panel"><div className="module-empty"><div className="chart-mark"><LayoutDashboard size={23} /></div><h2>এই অংশটি এখনো প্রস্তুত নয়</h2><p>এখানে কোনো নমুনা হিসাব দেখানো হচ্ছে না। বাস্তব ডেটা ও নিরাপদ কার্যপ্রবাহ যুক্ত না হওয়া পর্যন্ত এই মডিউলটি বন্ধ আছে।</p></div></section></>
   return <><div className="welcome-row"><div><div className="eyebrow">স্বপ্নতরী · ব্যবস্থাপনা</div><h1>{label}</h1><p>ডেটাবেসে থাকা তথ্য · সর্বশেষ ১০০টি</p></div>{currentFields && role === 'super_admin' && <button className="primary-button" onClick={() => setFormOpen(true)}><Plus size={17} /> নতুন যোগ করুন</button>}</div>
     {error && <div className="notice error-notice">{error}</div>}
-    {formOpen && currentFields && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setFormOpen(false) }}><section className="entry-modal"><div className="modal-heading"><div><b>নতুন {label}</b><span>তথ্য সংরক্ষণ হলে ডেটাবেসে যুক্ত হবে</span></div><button className="close-modal" onClick={() => setFormOpen(false)} aria-label="বন্ধ"><X size={18} /></button></div><form onSubmit={add} className="entry-form"><div className="field-grid">{currentFields.map((field) => <label key={field.key}>{field.label}{field.type === 'select' ? <select name={field.key} required={field.required} defaultValue="">{field.key === 'member_id' ? <><option value="">সদস্য বেছে নিন</option>{members.map((member) => <option value={member.id} key={member.id}>{member.member_id} · {member.full_name}</option>)}</> : <><option value="">নির্বাচন করুন</option>{field.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</>}</select> : <input name={field.key} type={field.type ?? 'text'} required={field.required} min={field.type === 'number' ? '0.01' : undefined} step={field.type === 'number' ? '0.01' : undefined} defaultValue={field.key === 'joining_date' || field.key === 'payment_date' || field.key === 'issue_date' ? new Date().toISOString().slice(0,10) : field.key === 'collection_month' ? String(new Date().getMonth()+1) : field.key === 'collection_year' ? String(new Date().getFullYear()) : undefined} />}</label>)}</div><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setFormOpen(false)}>বাতিল</button><button className="primary-button" disabled={saving}>{saving ? 'সংরক্ষণ হচ্ছে…' : 'সংরক্ষণ করুন'}</button></div></form></section></div>}
+    {formOpen && currentFields && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setFormOpen(false) }}><section className="entry-modal"><div className="modal-heading"><div><b>নতুন {label}</b><span>তথ্য সংরক্ষণ হলে ডেটাবেসে যুক্ত হবে</span></div><button className="close-modal" onClick={() => setFormOpen(false)} aria-label="বন্ধ"><X size={18} /></button></div><form onSubmit={add} className="entry-form"><div className="field-grid">{currentFields.map((field) => <label key={field.key}>{field.label}{field.type === 'select' ? <select name={field.key} required={field.required} defaultValue="">{field.key === 'member_id' ? <><option value="">সদস্য বেছে নিন</option>{members.map((member) => <option value={member.id} key={member.id}>{member.member_id} · {member.full_name}</option>)}</> : <><option value="">নির্বাচন করুন</option>{field.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</>}</select> : <input name={field.key} type={field.type ?? 'text'} required={field.required} min={field.type === 'number' ? '0.01' : undefined} step={field.type === 'number' ? '0.01' : undefined} defaultValue={field.key === 'joining_date' || field.key === 'payment_date' || field.key === 'issue_date' || field.key === 'start_date' || field.key === 'disbursement_date' ? new Date().toISOString().slice(0,10) : field.key === 'collection_month' ? String(new Date().getMonth()+1) : field.key === 'collection_year' ? String(new Date().getFullYear()) : undefined} />}</label>)}</div><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setFormOpen(false)}>বাতিল</button><button className="primary-button" disabled={saving}>{saving ? 'সংরক্ষণ হচ্ছে…' : 'সংরক্ষণ করুন'}</button></div></form></section></div>}
     {page === 'members' && <div className="member-help"><ShieldCheck size={18} /><span><b>সদস্যের লগইন চালু করতে:</b> Supabase → Authentication → Users-এ সদস্যের ইমেইল দিয়ে account তৈরি করুন; তারপর তালিকায় “লগইন যুক্ত” চাপুন। সদস্য তার password নিজে সেট করবেন।</span></div>}
     <section className="panel records-panel"><div className="records-toolbar"><b>{label} তালিকা</b><input aria-label="তালিকায় খুঁজুন" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="তথ্য খুঁজুন…" /><button className="secondary-button" onClick={() => void load()}>রিফ্রেশ</button></div><div className="table-scroll"><table><thead><tr>{currentColumns.map((col) => <th key={col.key}>{col.label}</th>)}{page === 'members' && <th>ব্যবস্থা</th>}</tr></thead><tbody>{visibleRows.map((row, index) => <tr key={String(row.id ?? index)}>{currentColumns.map((col) => <td key={col.key}>{col.money ? fmt(Number(row[col.key] ?? 0)) : col.key === 'member_id' && page !== 'members' ? (members.find((m) => m.id === row.member_id)?.member_id ?? String(row[col.key] ?? '').slice(0,8)) : displayValue(col.key, row[col.key])}</td>)}{page === 'members' && <td className="row-actions">{row.auth_user_id ? <span className="linked-account">লগইন যুক্ত</span> : <button className="row-action" onClick={() => void attachLogin(row)}>লগইন যুক্ত</button>}{row.status === 'active' && <button className="row-action" onClick={() => void deactivate(row.id)}>নিষ্ক্রিয় করুন</button>}</td>}</tr>)}</tbody></table>{loading ? <div className="table-empty">তথ্য আসছে…</div> : !visibleRows.length && <div className="table-empty">{search ? 'কোনো মিল পাওয়া যায়নি।' : 'এখনো কোনো তথ্য নেই। বাস্তব তথ্য যোগ হলে এখানে দেখা যাবে।'}</div>}</div></section></>
+}
+
+function FundModule({ label }: { label: string }) {
+  const [rows, setRows] = useState<{ transaction_number: string; transaction_date: string; category: string; amount: number; description: string; reference_number: string | null }[]>([])
+  const [loading, setLoading] = useState(true)
+  const [formOpen, setFormOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const load = async () => {
+    if (!supabase) return
+    setLoading(true)
+    const result = await supabase.from('financial_transactions').select('transaction_number,transaction_date,category,amount,description,reference_number').eq('transaction_type', 'fund').order('transaction_date', { ascending: false }).limit(100)
+    if (result.error) setError('তহবিলের লেনদেন আনা যায়নি।')
+    else { setRows(result.data ?? []); setError('') }
+    setLoading(false)
+  }
+  useEffect(() => { void load() }, [])
+  const add = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!supabase) return
+    setSaving(true); setError('')
+    const values = Object.fromEntries(new FormData(event.currentTarget).entries()) as Record<string, string>
+    const result = await supabase.rpc('post_financial_transaction', { payload: { transaction_number: `SWT-FUND-${crypto.randomUUID()}`, transaction_date: values.transaction_date, transaction_type: 'fund', category: 'Khidmat-e-Khalq', amount: Number(values.amount), description: values.description, reference_number: values.reference_number || null } })
+    if (result.error) setError('তহবিলের বরাদ্দ সংরক্ষণ হয়নি। অর্থের পরিমাণ ও হিসাবের অনুমতি যাচাই করুন।')
+    else { setFormOpen(false); await load() }
+    setSaving(false)
+  }
+  const total = rows.reduce((sum, row) => sum + Number(row.amount), 0)
+  return <><div className="welcome-row"><div><div className="eyebrow">স্বপ্নতরী · তহবিল</div><h1>{label}</h1><p>আসল ledger-এ থাকা তহবিল বরাদ্দ ও লেনদেন</p></div><button className="primary-button" onClick={() => setFormOpen(true)}><Plus size={17} /> নতুন বরাদ্দ</button></div>{error && <div className="notice error-notice">{error}</div>}<article className="metric-card fund-total"><div className="metric-icon green"><HeartHandshake size={19} /></div><span className="metric-label">তালিকাভুক্ত মোট তহবিল বরাদ্দ</span><strong>{loading ? '…' : fmt(total)}</strong><span className="metric-foot">বাস্তব ledger তথ্য · সর্বশেষ ১০০টি এন্ট্রি</span></article><section className="panel records-panel fund-records"><div className="records-toolbar"><b>তহবিলের লেনদেন</b><button className="secondary-button" onClick={() => void load()}>রিফ্রেশ</button></div><div className="table-scroll"><table><thead><tr><th>লেনদেন নম্বর</th><th>খাত</th><th>বিবরণ</th><th>পরিমাণ</th><th>তারিখ</th></tr></thead><tbody>{rows.map((row) => <tr key={row.transaction_number}><td>{row.transaction_number}</td><td>খিদমতে খালক</td><td>{row.description}</td><td>{fmt(Number(row.amount))}</td><td>{prettyDate(row.transaction_date)}</td></tr>)}</tbody></table>{loading ? <div className="table-empty">তথ্য আসছে…</div> : !rows.length && <div className="table-empty">এখনো কোনো তহবিল বরাদ্দ নেই।</div>}</div></section>{formOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setFormOpen(false) }}><section className="entry-modal"><div className="modal-heading"><div><b>নতুন তহবিল বরাদ্দ</b><span>সংরক্ষণ করলে ledger-এ হিসাব তৈরি হবে</span></div><button className="close-modal" onClick={() => setFormOpen(false)} aria-label="বন্ধ"><X size={18} /></button></div><form className="entry-form" onSubmit={add}><div className="field-grid"><label>বরাদ্দের পরিমাণ<input name="amount" type="number" min="0.01" step="0.01" required /></label><label>তারিখ<input name="transaction_date" type="date" required defaultValue={new Date().toISOString().slice(0,10)} /></label><label>বিবরণ<input name="description" required /></label><label>রেফারেন্স নম্বর<input name="reference_number" /></label></div><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setFormOpen(false)}>বাতিল</button><button className="primary-button" disabled={saving}>{saving ? 'সংরক্ষণ হচ্ছে…' : 'বরাদ্দ সংরক্ষণ করুন'}</button></div></form></section></div>}</>
+}
+
+function ReportModule({ label }: { label: string }) {
+  const now = new Date()
+  const [from, setFrom] = useState(`${now.getFullYear()}-01-01`)
+  const [to, setTo] = useState(now.toISOString().slice(0, 10))
+  const [rows, setRows] = useState<RecentTransaction[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const load = async () => {
+    if (!supabase || from > to) { setError('শুরুর তারিখ শেষ তারিখের আগের হতে হবে।'); return }
+    setLoading(true); setError('')
+    const result = await supabase.from('financial_transactions').select('transaction_number,transaction_date,category,amount,transaction_type').gte('transaction_date', from).lte('transaction_date', to).order('transaction_date', { ascending: false }).limit(5000)
+    if (result.error) setError('রিপোর্টের তথ্য আনা যায়নি।')
+    else setRows((result.data ?? []) as RecentTransaction[])
+    setLoading(false)
+  }
+  useEffect(() => { void load() }, [])
+  const income = rows.filter((row) => row.transaction_type === 'income').reduce((sum, row) => sum + Number(row.amount), 0)
+  const expense = rows.filter((row) => row.transaction_type === 'expense').reduce((sum, row) => sum + Number(row.amount), 0)
+  const funds = rows.filter((row) => row.transaction_type === 'fund').reduce((sum, row) => sum + Number(row.amount), 0)
+  const downloadCsv = () => {
+    const escape = (value: unknown) => `"${String(value ?? '').split('"').join('""')}"`
+    const content = ['লেনদেন নম্বর,তারিখ,ধরন,খাত,পরিমাণ', ...rows.map((row) => [row.transaction_number, row.transaction_date, displayValue('transaction_type', row.transaction_type), row.category, row.amount].map(escape).join(','))].join('\r\n')
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(new Blob(['\ufeff', content], { type: 'text/csv;charset=utf-8' }))
+    link.download = `swapnotori-report-${from}-${to}.csv`; link.click(); URL.revokeObjectURL(link.href)
+  }
+  return <><div className="welcome-row"><div><div className="eyebrow">স্বপ্নতরী · হিসাব</div><h1>{label}</h1><p>নির্বাচিত সময়ের বাস্তব ledger রিপোর্ট</p></div><button className="secondary-button" disabled={!rows.length} onClick={downloadCsv}>CSV ডাউনলোড</button></div><div className="report-filter panel"><label>শুরুর তারিখ<input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label><label>শেষ তারিখ<input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label><button className="primary-button" onClick={() => void load()}>{loading ? 'লোড হচ্ছে…' : 'রিপোর্ট দেখুন'}</button></div>{error && <div className="notice error-notice">{error}</div>}<div className="metrics-grid report-metrics">{[{ label: 'মোট আয়', value: income, tone: 'green' }, { label: 'মোট ব্যয়', value: expense, tone: 'rose' }, { label: 'তহবিল বরাদ্দ', value: funds, tone: 'gold' }, { label: 'নিট হিসাব', value: income - expense - funds, tone: 'blue' }].map((item) => <article className="metric-card" key={item.label}><span className="metric-label">{item.label}</span><strong>{loading ? '…' : fmt(item.value)}</strong><span className="metric-foot">{new Intl.NumberFormat('bn-BD').format(rows.length)}টি ledger এন্ট্রি</span></article>)}</div><section className="panel records-panel report-records"><div className="records-toolbar"><b>লেনদেনসমূহ</b><span>{prettyDate(from)} – {prettyDate(to)}</span></div><div className="table-scroll"><table><thead><tr><th>লেনদেন নম্বর</th><th>তারিখ</th><th>ধরন</th><th>খাত</th><th>পরিমাণ</th></tr></thead><tbody>{rows.map((row) => <tr key={row.transaction_number}><td>{row.transaction_number}</td><td>{prettyDate(row.transaction_date)}</td><td>{displayValue('transaction_type', row.transaction_type)}</td><td>{row.category}</td><td>{fmt(Number(row.amount))}</td></tr>)}</tbody></table>{loading ? <div className="table-empty">রিপোর্ট আসছে…</div> : !rows.length && <div className="table-empty">এই তারিখে কোনো লেনদেন নেই।</div>}</div></section></>
 }
