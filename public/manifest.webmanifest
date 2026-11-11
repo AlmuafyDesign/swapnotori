@@ -1,0 +1,10 @@
+{
+  "name": "স্বপ্নতরী | SWAPNOTORI",
+  "short_name": "স্বপ্নতরী",
+  "description": "লক্ষ্য সুদূরপ্রসারী",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f4f7f5",
+  "theme_color": "#064e47",
+  "icons": [{ "src": "./icon.jpg", "sizes": "288x288", "type": "image/jpeg", "purpose": "any" }]
+}
