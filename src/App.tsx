@@ -106,7 +106,7 @@ export default function App() {
     const authError = params.get('error')
     if (!authError) return
     sessionStorage.removeItem('swapnotori_google_login_email')
-    if (params.get('error_code') === 'otp_expired') setError('এই ইমেইল লিংকের মেয়াদ শেষ হয়েছে বা এটি আগে খোলা হয়েছে। ইমেইল ঠিকানা লিখে “ইমেইলে লগইন লিংক পাঠান” চাপুন, তারপর নতুন ইমেইলের লিংক খুলুন।')
+    if (params.get('error_code') === 'otp_expired') setError('এই ইমেইল লিংকের মেয়াদ শেষ হয়েছে বা আগে খোলা হয়েছে। সদস্য হলে অনুমোদিত Gmail দিয়ে আবার Google sign-in করুন; সুপার অ্যাডমিন হলে নতুন password reset link নিন।')
     else setError('লগইনটি সম্পন্ন হয়নি। Gmail অনুমোদিত কি না যাচাই করুন; Google sign-in চালু থাকলে আবার চেষ্টা করুন।')
     window.history.replaceState(null, document.title, `${window.location.pathname}${window.location.search}`)
   }, [])
@@ -222,7 +222,7 @@ export default function App() {
     if (!supabase) return false
     const { error: updateError } = await supabase.auth.updateUser({ password: newPassword })
     if (updateError) { setError('নতুন password সেট হয়নি। লিংকটি মেয়াদোত্তীর্ণ হলে নতুন reset link নিন।'); return false }
-    setPasswordRecovery(false); setError(''); setNotice('নতুন password সেট হয়েছে। এখন এই Gmail ও password দিয়ে লগইন করতে পারবেন।')
+    setPasswordRecovery(false); setError(''); setNotice('সুপার অ্যাডমিনের নতুন password সেট হয়েছে। এখন এই Gmail ও password দিয়ে প্রবেশ করুন।')
     return true
   }
 
@@ -470,19 +470,19 @@ function ModulePage({ page, label, role, userId, email }: { page: string; label:
     if (!makePrimary) {
       const approval = await supabase.rpc('approve_member_login_email', { target_member_id: row.id, approved_email: normalizedEmail })
       if (approval.error) setError('Gmail অনুমোদিত হয়নি। নিশ্চিত করুন এটি অন্য সদস্যের নয় এবং নতুন SQL পরিবর্তনটি Supabase-এ চালানো হয়েছে।')
-      else setError('Gmail অনুমোদন করা হয়েছে। সদস্য এখন এই Gmail দিয়ে অ্যাকাউন্ট তৈরি করে password দিয়ে লগইন করতে পারবেন।')
+      else setError('Gmail অনুমোদন করা হয়েছে। সদস্য এখন এই ঠিকানাটি দিয়ে Google sign-in করতে পারবেন।')
       setSaving(false); return
     }
     const sent = await supabase.auth.signInWithOtp({ email: normalizedEmail, options: { emailRedirectTo: authRedirectUrl } })
-    if (sent.error) { setError('লগইন লিংক পাঠানো যায়নি। ইমেইল ঠিকানা যাচাই করে আবার চেষ্টা করুন।'); setSaving(false); return }
+    if (sent.error) { setError('Gmail যাচাইয়ের link পাঠানো যায়নি। ঠিকানা যাচাই করে আবার চেষ্টা করুন।'); setSaving(false); return }
     const profile = await supabase.from('profiles').select('id,role').eq('email', normalizedEmail).maybeSingle()
-    if (profile.error || !profile.data || profile.data.role !== 'member') { setError('লিংক পাঠানো হয়েছে, তবে অ্যাকাউন্ট যুক্ত করা যায়নি। একটু পরে আবার চেষ্টা করুন।'); setSaving(false); return }
+    if (profile.error || !profile.data || profile.data.role !== 'member') { setError('Gmail যাচাইয়ের link পাঠানো হয়েছে, তবে account যুক্ত হয়নি। একটু পরে আবার চেষ্টা করুন।'); setSaving(false); return }
     const already = await supabase.from('members').select('id').eq('auth_user_id', profile.data.id).maybeSingle()
     const aliasOwner = await supabase.from('member_login_accounts').select('member_id').eq('auth_user_id', profile.data.id).maybeSingle()
     if ((already.data && already.data.id !== row.id) || (aliasOwner.data && aliasOwner.data.member_id !== row.id)) { setError('এই Gmail অন্য সদস্যের সাথে যুক্ত আছে।'); setSaving(false); return }
     if (makePrimary) {
       const oldAccountId = typeof row.auth_user_id === 'string' ? row.auth_user_id : null
-      if (oldAccountId === profile.data.id) { setError('সদস্যের Gmail-এ লগইন লিংক পাঠানো হয়েছে।'); setSaving(false); return }
+      if (oldAccountId === profile.data.id) { setError('এই Gmail ইতিমধ্যেই সদস্যের সাথে যুক্ত আছে।'); setSaving(false); return }
       if (oldAccountId && oldAccountId !== profile.data.id) {
         const oldAlias = await supabase.from('member_login_accounts').select('id').eq('auth_user_id', oldAccountId).maybeSingle()
         if (!oldAlias.data) {
@@ -494,16 +494,9 @@ function ModulePage({ page, label, role, userId, email }: { page: string; label:
       }
       const changed = await supabase.from('members').update({ auth_user_id: profile.data.id, email: normalizedEmail }).eq('id', row.id)
       if (changed.error) setError('প্রধান Gmail বদলানো যায়নি।')
-      else { await supabase.from('member_login_accounts').delete().eq('auth_user_id', profile.data.id); await load(); setError(oldAccountId ? 'নতুন Gmail প্রধান হয়েছে, আগের Gmail বিকল্প হিসেবে রাখা হয়েছে। লগইন লিংক পাঠানো হয়েছে।' : 'Gmail লগইনের সাথে যুক্ত হয়েছে। লগইন লিংক পাঠানো হয়েছে।') }
+      else { await supabase.from('member_login_accounts').delete().eq('auth_user_id', profile.data.id); await load(); setError(oldAccountId ? 'নতুন Gmail প্রধান হয়েছে; আগের Gmail বিকল্প হিসেবে রাখা হয়েছে।' : 'প্রধান Gmail সদস্যের সাথে যুক্ত হয়েছে।') }
     }
     setSaving(false)
-  }
-  const sendLoginLink = async (row: Record<string, unknown>) => {
-    if (typeof row.email !== 'string' || !row.email.trim()) {
-      setError('সদস্যের তথ্য সম্পাদনা করে আগে Gmail যোগ করুন।')
-      return
-    }
-    await manageLogin(row, true, row.email.trim())
   }
     if (page === 'funds') return <FundModule label={label} />
   if (page === 'reports') return <ReportModule label={label} />
@@ -513,7 +506,7 @@ function ModulePage({ page, label, role, userId, email }: { page: string; label:
   return <><div className="welcome-row"><div><div className="eyebrow">স্বপ্নতরী · ব্যবস্থাপনা</div><h1>{label}</h1><p>ডেটাবেসে থাকা সব রেকর্ড · মোট {new Intl.NumberFormat('bn-BD').format(totalRows)}টি</p></div>{currentFields && role === 'super_admin' && <button className="primary-button" onClick={() => { setEditing(null); setFormOpen(true) }}><Plus size={17} /> নতুন যোগ করুন</button>}</div>
     {error && <div className="notice error-notice">{error}</div>}
     {formOpen && currentFields && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) { setFormOpen(false); setEditing(null) } }}><section className="entry-modal"><div className="modal-heading"><div><b>{editing ? 'সদস্যের তথ্য সম্পাদনা' : `নতুন ${label}`}</b><span>{editing ? 'পরিবর্তন সংরক্ষণ করলে সদস্যের তথ্য হালনাগাদ হবে' : 'তথ্য সংরক্ষণ হলে ডেটাবেসে যুক্ত হবে'}</span></div><button className="close-modal" onClick={() => { setFormOpen(false); setEditing(null) }} aria-label="বন্ধ"><X size={18} /></button></div><form onSubmit={add} className="entry-form"><div className="field-grid">{currentFields.map((field) => <label key={field.key}>{field.label}{field.type === 'select' ? <select name={field.key} required={field.required} defaultValue="">{field.key === 'member_id' ? <><option value="">সদস্য বেছে নিন</option>{members.map((member) => <option value={member.id} key={member.id}>{member.member_id} · {member.full_name}</option>)}</> : <><option value="">নির্বাচন করুন</option>{field.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</>}</select> : <input name={field.key} type={field.type ?? 'text'} required={field.required} readOnly={Boolean(editing?.auth_user_id && field.key === 'email')} min={field.type === 'number' ? '0.01' : undefined} step={field.type === 'number' ? '0.01' : undefined} defaultValue={editing ? String(editing[field.key] ?? '') : field.key === 'joining_date' || field.key === 'payment_date' || field.key === 'issue_date' || field.key === 'start_date' || field.key === 'disbursement_date' ? new Date().toISOString().slice(0,10) : field.key === 'collection_month' ? String(new Date().getMonth()+1) : field.key === 'collection_year' ? String(new Date().getFullYear()) : undefined} />}</label>)}</div><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => { setFormOpen(false); setEditing(null) }}>বাতিল</button><button className="primary-button" disabled={saving}>{saving ? 'সংরক্ষণ হচ্ছে…' : 'সংরক্ষণ করুন'}</button></div></form></section></div>}
-    {page === 'members' && <div className="member-help"><ShieldCheck size={18} /><span><b>সদস্যের লগইন:</b> সদস্য যোগের পর “লগইন লিংক পাঠান” চাপলে সদস্যের প্রধান Gmail-এ লিংক যাবে। সদস্যের অন্য Gmail account অনুমোদন করতে “Gmail অনুমোদন” চাপুন। সদস্যকে সরালে তার পরিচয় ও লগইন মুছবে, আর্থিক হিসাব পরিচয়হীনভাবে থাকবে।</span></div>}
+    {page === 'members' && <div className="member-help"><ShieldCheck size={18} /><span><b>সদস্যের Google লগইন:</b> সদস্যের প্রধান Gmail দিয়ে Google sign-in করলেই প্রবেশ হবে। বিকল্প Gmail অনুমোদন করতে “Gmail অনুমোদন” এবং প্রধান ঠিকানা বদলাতে “প্রধান Gmail বদলান” ব্যবহার করুন। সদস্য মুছলে তার পরিচয় ও লগইন মুছে যাবে; আর্থিক হিসাব পরিচয়হীন থাকবে।</span></div>}
     {receipt && (
       <div className="modal-backdrop receipt-backdrop">
         <section className="receipt-dialog">
@@ -534,7 +527,7 @@ function ModulePage({ page, label, role, userId, email }: { page: string; label:
         </section>
       </div>
     )}
-    <section className="panel records-panel"><div className="records-toolbar"><b>{label} তালিকা</b><input aria-label="সব রেকর্ডে খুঁজুন" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="সব রেকর্ডে খুঁজুন…" /><button className="secondary-button" onClick={() => void load()}>রিফ্রেশ</button></div><div className="table-scroll"><table><thead><tr>{currentColumns.map((col) => <th key={col.key}>{col.label}</th>)}{page === 'members' && <th>ব্যবস্থা</th>}</tr></thead><tbody>{visibleRows.map((row, index) => <tr key={String(row.id ?? index)}>{currentColumns.map((col) => <td key={col.key}>{col.money ? fmt(Number(row[col.key] ?? 0)) : col.key === 'member_id' && page !== 'members' ? (members.find((m) => m.id === row.member_id)?.member_id ?? String(row[col.key] ?? '').slice(0,8)) : displayValue(col.key, row[col.key])}</td>)}{page === 'members' && <td className="row-actions"><button className="row-action row-edit" onClick={() => { setEditing(row); setFormOpen(true) }}>সম্পাদনা</button><button className="row-action row-login" disabled={saving} onClick={() => void sendLoginLink(row)}>লগইন লিংক পাঠান</button><button className="row-action" disabled={saving} onClick={() => void manageLogin(row, false)}>Gmail অনুমোদন</button><button className="row-action row-reactivate" disabled={saving} onClick={() => void manageLogin(row, true)}>Gmail বদলান</button><button className="row-action row-delete" disabled={saving} onClick={() => void deleteMember(row)}>স্থায়ীভাবে মুছুন</button></td>}</tr>)}</tbody></table>{loading ? <div className="table-empty">তথ্য আসছে…</div> : !visibleRows.length && <div className="table-empty">{search ? 'এই খোঁজে কোনো রেকর্ড নেই।' : 'এখনো কোনো তথ্য নেই। বাস্তব তথ্য যোগ হলে এখানে দেখা যাবে।'}</div>}</div><div className="pagination"><span>পাতা {new Intl.NumberFormat('bn-BD').format(pageIndex + 1)} / {new Intl.NumberFormat('bn-BD').format(Math.max(1, Math.ceil(totalRows / 100)))}</span><div><button className="secondary-button" disabled={pageIndex === 0 || loading} onClick={() => setPageIndex((n) => n - 1)}>আগের পাতা</button><button className="secondary-button" disabled={(pageIndex + 1) * 100 >= totalRows || loading} onClick={() => setPageIndex((n) => n + 1)}>পরের পাতা</button></div></div></section></>
+    <section className="panel records-panel"><div className="records-toolbar"><b>{label} তালিকা</b><input aria-label="সব রেকর্ডে খুঁজুন" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="সব রেকর্ডে খুঁজুন…" /><button className="secondary-button" onClick={() => void load()}>রিফ্রেশ</button></div><div className="table-scroll"><table><thead><tr>{currentColumns.map((col) => <th key={col.key}>{col.label}</th>)}{page === 'members' && <th>ব্যবস্থা</th>}</tr></thead><tbody>{visibleRows.map((row, index) => <tr key={String(row.id ?? index)}>{currentColumns.map((col) => <td key={col.key}>{col.money ? fmt(Number(row[col.key] ?? 0)) : col.key === 'member_id' && page !== 'members' ? (members.find((m) => m.id === row.member_id)?.member_id ?? String(row[col.key] ?? '').slice(0,8)) : displayValue(col.key, row[col.key])}</td>)}{page === 'members' && <td className="row-actions"><button className="row-action row-edit" onClick={() => { setEditing(row); setFormOpen(true) }}>সম্পাদনা</button><button className="row-action" disabled={saving} onClick={() => void manageLogin(row, false)}>Gmail অনুমোদন</button><button className="row-action row-reactivate" disabled={saving} onClick={() => void manageLogin(row, true)}>প্রধান Gmail বদলান</button><button className="row-action row-delete" disabled={saving} onClick={() => void deleteMember(row)}>স্থায়ীভাবে মুছুন</button></td>}</tr>)}</tbody></table>{loading ? <div className="table-empty">তথ্য আসছে…</div> : !visibleRows.length && <div className="table-empty">{search ? 'এই খোঁজে কোনো রেকর্ড নেই।' : 'এখনো কোনো তথ্য নেই। বাস্তব তথ্য যোগ হলে এখানে দেখা যাবে।'}</div>}</div><div className="pagination"><span>পাতা {new Intl.NumberFormat('bn-BD').format(pageIndex + 1)} / {new Intl.NumberFormat('bn-BD').format(Math.max(1, Math.ceil(totalRows / 100)))}</span><div><button className="secondary-button" disabled={pageIndex === 0 || loading} onClick={() => setPageIndex((n) => n - 1)}>আগের পাতা</button><button className="secondary-button" disabled={(pageIndex + 1) * 100 >= totalRows || loading} onClick={() => setPageIndex((n) => n + 1)}>পরের পাতা</button></div></div></section></>
 }
 
 function FundModule({ label }: { label: string }) {
