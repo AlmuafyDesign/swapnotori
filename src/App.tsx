@@ -342,11 +342,11 @@ function ModulePage({ page, label, role, userId, email }: { page: string; label:
             if (linked.error) setError('সদস্য তৈরি হয়েছে, তবে লগইন অ্যাকাউন্ট যুক্ত হয়নি। Supabase Auth-এ এই ইমেইলের user তৈরি আছে কি না যাচাই করুন।')
           }
         }
-      } else if (page === 'investments') result = await withTimeout(supabase.from('investments').insert({ ...payload, invested_amount: Number(payload.invested_amount), current_value: Number(payload.current_value), maturity_date: payload.maturity_date || null, notes: payload.notes || null, status: 'active', created_by: (await supabase.auth.getUser()).data.user?.id }))
-      else if (page === 'qard_hasan_loans') result = await withTimeout(supabase.from('qard_hasan_loans').insert({ member_id: payload.member_id, principal_amount: Number(payload.principal_amount), outstanding_amount: Number(payload.principal_amount), disbursement_date: payload.disbursement_date, notes: payload.notes || null, status: 'active', approved_by: (await supabase.auth.getUser()).data.user?.id }))
-      else if (page === 'monthly_savings') result = await withTimeout(supabase.from('monthly_savings').insert({ ...payload, amount: Number(payload.amount), member_id: payload.member_id, receipt_number: `SWT-MS-${crypto.randomUUID()}`, created_by: (await supabase.auth.getUser()).data.user?.id }))
-      else if (page === 'annual_fees') result = await withTimeout(supabase.from('annual_fees').insert({ ...payload, amount: Number(payload.amount), receipt_number: `SWT-AF-${crypto.randomUUID()}`, created_by: (await supabase.auth.getUser()).data.user?.id }))
-      else result = await withTimeout(supabase.from('share_registry').insert({ ...payload, share_value: Number(payload.share_value), member_id: payload.member_id, created_by: (await supabase.auth.getUser()).data.user?.id }))
+      } else if (page === 'investments') result = await withTimeout(supabase.from('investments').insert({ ...payload, invested_amount: Number(payload.invested_amount), current_value: Number(payload.current_value), maturity_date: payload.maturity_date || null, notes: payload.notes || null, status: 'active', created_by: userId }))
+      else if (page === 'qard_hasan_loans') result = await withTimeout(supabase.from('qard_hasan_loans').insert({ member_id: payload.member_id, principal_amount: Number(payload.principal_amount), outstanding_amount: Number(payload.principal_amount), disbursement_date: payload.disbursement_date, notes: payload.notes || null, status: 'active', approved_by: userId }))
+      else if (page === 'monthly_savings') result = await withTimeout(supabase.from('monthly_savings').insert({ ...payload, amount: Number(payload.amount), member_id: payload.member_id, receipt_number: `SWT-MS-${crypto.randomUUID()}`, created_by: userId }))
+      else if (page === 'annual_fees') result = await withTimeout(supabase.from('annual_fees').insert({ ...payload, amount: Number(payload.amount), receipt_number: `SWT-AF-${crypto.randomUUID()}`, created_by: userId }))
+      else result = await withTimeout(supabase.from('share_registry').insert({ ...payload, share_value: Number(payload.share_value), member_id: payload.member_id, created_by: userId }))
 
       if (result.error) {
         const duplicate = result.error.message.toLowerCase().includes('duplicate') || result.error.message.toLowerCase().includes('unique')
