@@ -77,13 +77,14 @@ export default function App() {
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
+  const [passwordRecovery, setPasswordRecovery] = useState(false)
   const [installPrompt, setInstallPrompt] = useState<Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> } | null>(null)
   const [installed, setInstalled] = useState(false)
 
   useEffect(() => {
     if (!supabase) return
     void supabase.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data } = supabase.auth.onAuthStateChange((_event, next) => setSession(next))
+    const { data } = supabase.auth.onAuthStateChange((event, next) => { setSession(next); if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true) })
     return () => data.subscription.unsubscribe()
   }, [])
 
@@ -178,6 +179,33 @@ export default function App() {
     setBusy(false)
   }
 
+  const signUp = async (event: FormEvent) => {
+    event.preventDefault(); if (!supabase) return
+    setBusy(true); setError(''); setNotice('')
+    const { data, error: signUpError } = await supabase.auth.signUp({ email: email.trim().toLowerCase(), password, options: { emailRedirectTo: authRedirectUrl } })
+    if (signUpError) setError('অ্যাকাউন্ট তৈরি হয়নি। Gmail-টি সুপার অ্যাডমিন সদস্যের জন্য অনুমোদন করেছেন কি না যাচাই করুন; আগে account থাকলে ইমেইল লগইন লিংক ব্যবহার করুন।')
+    else if (data.session) setNotice('অ্যাকাউন্ট তৈরি হয়েছে; আপনি লগইন করেছেন।')
+    else setNotice('অ্যাকাউন্টের নিশ্চিতকরণ লিংক ইমেইলে পাঠানো হয়েছে। লিংক খুলে account চালু করুন, তারপর Gmail ও password দিয়ে লগইন করুন।')
+    setBusy(false)
+  }
+
+  const sendPasswordReset = async () => {
+    if (!supabase || !email.trim()) { setError('আগে Gmail ঠিকানা লিখুন।'); return }
+    setBusy(true); setError(''); setNotice('')
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo: authRedirectUrl })
+    if (resetError) setError('পাসওয়ার্ড সেট করার লিংক পাঠানো যায়নি। Gmail ঠিকানা যাচাই করে আবার চেষ্টা করুন।')
+    else setNotice('যদি এই অনুমোদিত Gmail-এর account থাকে, password সেট করার লিংক ইমেইলে পাঠানো হয়েছে।')
+    setBusy(false)
+  }
+
+  const saveRecoveredPassword = async (newPassword: string) => {
+    if (!supabase) return false
+    const { error: updateError } = await supabase.auth.updateUser({ password: newPassword })
+    if (updateError) { setError('নতুন password সেট হয়নি। লিংকটি মেয়াদোত্তীর্ণ হলে নতুন reset link নিন।'); return false }
+    setPasswordRecovery(false); setError(''); setNotice('নতুন password সেট হয়েছে। এখন এই Gmail ও password দিয়ে লগইন করতে পারবেন।')
+    return true
+  }
+
   const sendLoginLink = async () => {
     if (!supabase || !email.trim()) { setError('আগে ইমেইল ঠিকানা লিখুন।'); return }
     setBusy(true); setError(''); setNotice('')
@@ -188,7 +216,8 @@ export default function App() {
   }
 
   if (!supabaseConfigured) return <SetupNotice />
-  if (!session) return <Login email={email} password={password} busy={busy} error={error} notice={notice} onEmail={setEmail} onPassword={setPassword} onSubmit={signIn} onSendLink={() => void sendLoginLink()} logo={logoUrl} installPrompt={installPrompt ? installApp : undefined} installed={installed} />
+  if (passwordRecovery && session) return <PasswordRecovery onSave={saveRecoveredPassword} error={error} busy={busy} />
+  if (!session) return <Login email={email} password={password} busy={busy} error={error} notice={notice} onEmail={setEmail} onPassword={setPassword} onSubmit={signIn} onSignUp={signUp} onForgotPassword={() => void sendPasswordReset()} onSendLink={() => void sendLoginLink()} logo={logoUrl} installPrompt={installPrompt ? installApp : undefined} installed={installed} />
   if (!role) return <div className="center-message"><img src={logoUrl} alt="স্বপ্নতরী" /><p>{error || 'আপনার অ্যাকাউন্ট যাচাই হচ্ছে…'}</p><button className="text-button" onClick={() => void supabase?.auth.signOut()}>লগআউট</button></div>
 
   const selected = navigation.find((item) => item.page === page)
@@ -219,7 +248,16 @@ export default function App() {
 }
 
 function SetupNotice() { return <div className="setup-screen"><div className="setup-card"><img src={logoUrl} alt="স্বপ্নতরী" /><div className="eyebrow">প্রকল্প প্রস্তুত</div><h1>স্বপ্নতরী</h1><p>Supabase সংযোগ স্থাপন না হওয়া পর্যন্ত নিরাপদ লগইন ও বাস্তব হিসাব চালু হবে না।</p><div className="setup-step"><b>১.</b><span>Supabase Project Settings থেকে Project URL ও publishable anon key নিন।</span></div><div className="setup-step"><b>২.</b><span>প্রকল্পের মূল ফোল্ডারে <code>.env</code> ফাইলে মান দুটি বসান।</span></div><div className="setup-step"><b>৩.</b><span><code>supabase/migrations</code>-এর SQL Supabase SQL Editor-এ চালান।</span></div><div className="setup-warning"><ShieldCheck size={17} /> service role key কখনো frontend বা GitHub-এ রাখবেন না।</div></div></div> }
-function Login({ email, password, busy, error, notice, onEmail, onPassword, onSubmit, onSendLink, logo, installPrompt, installed }: { email: string; password: string; busy: boolean; error: string; notice: string; onEmail: (v: string) => void; onPassword: (v: string) => void; onSubmit: (e: FormEvent) => void; onSendLink: () => void; logo: string; installPrompt?: () => void; installed: boolean }) { return <div className="login-screen"><div className="login-aside"><div className="login-brand"><img src={logo} alt="" /><span>স্বপ্নতরী</span></div><div className="login-quote"><span>লক্ষ্য সুদূরপ্রসারী</span><h1>আজকের সঞ্চয়,<br />আগামী দিনের পুঁজি।</h1><p>একসাথে গড়ি একটি সুশৃঙ্খল ও সমৃদ্ধ আগামী।</p></div><small>স্বপ্নতরী · শেয়ারভিত্তিক প্রতিষ্ঠান</small></div><div className="login-form-wrap"><form className="login-form" onSubmit={onSubmit}><div className="eyebrow">আপনার অ্যাকাউন্টে প্রবেশ করুন</div><h2>স্বাগতম</h2><p>আপনার নিবন্ধিত তথ্য দিয়ে লগইন করুন।</p><label>ইমেইল ঠিকানা<input type="email" required autoComplete="username" value={email} onChange={(e) => onEmail(e.target.value)} placeholder="name@example.com" /></label><label>পাসওয়ার্ড<input type="password" required autoComplete="current-password" value={password} onChange={(e) => onPassword(e.target.value)} placeholder="আপনার পাসওয়ার্ড" /></label>{error && <div className="notice error-notice">{error}</div>}{notice && <div className="notice success-notice">{notice}</div>}<button className="primary-button full-width" disabled={busy}>{busy ? 'লগইন হচ্ছে…' : 'পাসওয়ার্ড দিয়ে লগইন'}</button><button type="button" className="secondary-button full-width login-link-button" onClick={onSendLink} disabled={busy}>{busy ? 'পাঠানো হচ্ছে…' : 'ইমেইলে লগইন লিংক পাঠান'}</button><span className="login-security"><ShieldCheck size={16} /> আপনার তথ্য এনক্রিপ্ট করে সুরক্ষিত রাখা হয়</span>{installPrompt && <button type="button" className="install-login" onClick={installPrompt}><Download size={16} /> ফোনে অ্যাপ ইনস্টল করুন</button>}{installed && <span className="login-security">অ্যাপটি ফোনে ইনস্টল করা আছে</span>}<p className="install-hint">ইনস্টল বাটন না এলে Chrome-এর মেনু ⋮ খুলে <b>Install app</b> বা <b>Add to Home screen</b> চাপুন।</p></form></div></div> }
+function Login({ email, password, busy, error, notice, onEmail, onPassword, onSubmit, onSignUp, onForgotPassword, onSendLink, logo, installPrompt, installed }: { email: string; password: string; busy: boolean; error: string; notice: string; onEmail: (v: string) => void; onPassword: (v: string) => void; onSubmit: (e: FormEvent) => void; onSignUp: (e: FormEvent) => void; onForgotPassword: () => void; onSendLink: () => void; logo: string; installPrompt?: () => void; installed: boolean }) {
+  const [creating, setCreating] = useState(false)
+  return <div className="login-screen"><div className="login-aside"><div className="login-brand"><img src={logo} alt="" /><span>স্বপ্নতরী</span></div><div className="login-quote"><span>লক্ষ্য সুদূরপ্রসারী</span><h1>আজকের সঞ্চয়,<br />আগামী দিনের পুঁজি।</h1><p>একসাথে গড়ি একটি সুশৃঙ্খল ও সমৃদ্ধ আগামী।</p></div><small>স্বপ্নতরী · শেয়ারভিত্তিক প্রতিষ্ঠান</small></div><div className="login-form-wrap"><form className="login-form" onSubmit={creating ? onSignUp : onSubmit}><div className="eyebrow">{creating ? 'সদস্য অ্যাকাউন্ট তৈরি' : 'আপনার অ্যাকাউন্টে প্রবেশ করুন'}</div><h2>{creating ? 'সদস্য নিবন্ধন' : 'স্বাগতম'}</h2><p>{creating ? 'শুধু সুপার অ্যাডমিনের কাছে থাকা অনুমোদিত Gmail দিয়ে account তৈরি হবে।' : 'আপনার নিবন্ধিত Gmail ও পাসওয়ার্ড দিয়ে লগইন করুন।'}</p><label>Gmail ঠিকানা<input type="email" required autoComplete="username" value={email} onChange={(e) => onEmail(e.target.value)} placeholder="name@example.com" /></label><label>পাসওয়ার্ড<input type="password" required minLength={creating ? 8 : undefined} autoComplete={creating ? 'new-password' : 'current-password'} value={password} onChange={(e) => onPassword(e.target.value)} placeholder={creating ? 'কমপক্ষে ৮ অক্ষর' : 'আপনার পাসওয়ার্ড'} /></label>{error && <div className="notice error-notice">{error}</div>}{notice && <div className="notice success-notice">{notice}</div>}<button className="primary-button full-width" disabled={busy}>{busy ? 'অপেক্ষা করুন…' : creating ? 'অ্যাকাউন্ট তৈরি করুন' : 'পাসওয়ার্ড দিয়ে লগইন'}</button>{!creating && <><button type="button" className="secondary-button full-width login-link-button" onClick={onSendLink} disabled={busy}>ইমেইলে লগইন লিংক পাঠান</button><button type="button" className="account-mode-button" onClick={onForgotPassword} disabled={busy}>পাসওয়ার্ড ভুলে গেছেন? নতুন password নিন</button></>}<button type="button" className="account-mode-button" disabled={busy} onClick={() => setCreating((value) => !value)}>{creating ? 'আগে account আছে? লগইন করুন' : 'নতুন সদস্য? account তৈরি করুন'}</button><span className="login-security"><ShieldCheck size={16} /> শুধু অনুমোদিত সদস্য Gmail গ্রহণ করা হবে</span>{installPrompt && <button type="button" className="install-login" onClick={installPrompt}><Download size={16} /> ফোনে অ্যাপ ইনস্টল করুন</button>}{installed && <span className="login-security">অ্যাপটি ফোনে ইনস্টল করা আছে</span>}<p className="install-hint">ইনস্টল বাটন না এলে Chrome-এর মেনু ⋮ খুলে <b>Install app</b> বা <b>Add to Home screen</b> চাপুন।</p></form></div></div>
+}
+
+function PasswordRecovery({ onSave, error, busy }: { onSave: (password: string) => Promise<boolean>; error: string; busy: boolean }) {
+  const [password, setPassword] = useState(''); const [confirm, setConfirm] = useState(''); const [saving, setSaving] = useState(false)
+  const submit = async (event: FormEvent) => { event.preventDefault(); if (password !== confirm) return; setSaving(true); await onSave(password); setSaving(false) }
+  return <div className="setup-screen"><form className="login-form recovery-form" onSubmit={submit}><div className="eyebrow">অ্যাকাউন্ট নিরাপত্তা</div><h2>নতুন পাসওয়ার্ড দিন</h2><p>Gmail লিংকটি যাচাই হয়েছে। এখন নিজের password সেট করুন।</p><label>নতুন পাসওয়ার্ড<input type="password" required minLength={8} autoComplete="new-password" value={password} onChange={(e)=>setPassword(e.target.value)} /></label><label>পাসওয়ার্ড আবার লিখুন<input type="password" required minLength={8} autoComplete="new-password" value={confirm} onChange={(e)=>setConfirm(e.target.value)} /></label>{password && confirm && password !== confirm && <div className="notice error-notice">দুটি পাসওয়ার্ড মিলছে না।</div>}{error && <div className="notice error-notice">{error}</div>}<button className="primary-button full-width" disabled={busy || saving || password !== confirm}>{saving ? 'সংরক্ষণ হচ্ছে…' : 'নতুন পাসওয়ার্ড সংরক্ষণ'}</button></form></div>
+}
 function MemberNotice() {
   const [record, setRecord] = useState<{ name: string; memberId: string; savings: number; fees: number; shares: number; loan: number } | null>(null)
   const [message, setMessage] = useState('')
@@ -412,6 +450,12 @@ function ModulePage({ page, label, role, userId, email }: { page: string; label:
     if (!address) return
     setError(''); setSaving(true)
     const normalizedEmail = address.toLowerCase()
+    if (!makePrimary) {
+      const approval = await supabase.rpc('approve_member_login_email', { target_member_id: row.id, approved_email: normalizedEmail })
+      if (approval.error) setError('Gmail অনুমোদিত হয়নি। নিশ্চিত করুন এটি অন্য সদস্যের নয় এবং নতুন SQL পরিবর্তনটি Supabase-এ চালানো হয়েছে।')
+      else setError('Gmail অনুমোদন করা হয়েছে। সদস্য এখন এই Gmail দিয়ে অ্যাকাউন্ট তৈরি করে password দিয়ে লগইন করতে পারবেন।')
+      setSaving(false); return
+    }
     const sent = await supabase.auth.signInWithOtp({ email: normalizedEmail, options: { emailRedirectTo: authRedirectUrl } })
     if (sent.error) { setError('লগইন লিংক পাঠানো যায়নি। ইমেইল ঠিকানা যাচাই করে আবার চেষ্টা করুন।'); setSaving(false); return }
     const profile = await supabase.from('profiles').select('id,role').eq('email', normalizedEmail).maybeSingle()
@@ -434,12 +478,6 @@ function ModulePage({ page, label, role, userId, email }: { page: string; label:
       const changed = await supabase.from('members').update({ auth_user_id: profile.data.id, email: normalizedEmail }).eq('id', row.id)
       if (changed.error) setError('প্রধান Gmail বদলানো যায়নি।')
       else { await supabase.from('member_login_accounts').delete().eq('auth_user_id', profile.data.id); await load(); setError(oldAccountId ? 'নতুন Gmail প্রধান হয়েছে, আগের Gmail বিকল্প হিসেবে রাখা হয়েছে। লগইন লিংক পাঠানো হয়েছে।' : 'Gmail লগইনের সাথে যুক্ত হয়েছে। লগইন লিংক পাঠানো হয়েছে।') }
-    } else if (already.data?.id === row.id || aliasOwner.data?.member_id === row.id) {
-      setError('এই Gmail আগে থেকেই এই সদস্যের লগইনে যুক্ত আছে।')
-    } else {
-      const linked = await supabase.from('member_login_accounts').insert({ member_id: row.id, auth_user_id: profile.data.id, email: normalizedEmail, added_by: (await supabase.auth.getUser()).data.user?.id })
-      if (linked.error) setError('বিকল্প Gmail যুক্ত হয়নি। ঠিকানাটি অন্য সদস্যের সাথে যুক্ত থাকতে পারে।')
-      else { await load(); setError('বিকল্প Gmail যুক্ত হয়েছে এবং তাতে নিরাপদ লগইন লিংক পাঠানো হয়েছে।') }
     }
     setSaving(false)
   }
@@ -458,7 +496,7 @@ function ModulePage({ page, label, role, userId, email }: { page: string; label:
   return <><div className="welcome-row"><div><div className="eyebrow">স্বপ্নতরী · ব্যবস্থাপনা</div><h1>{label}</h1><p>ডেটাবেসে থাকা সব রেকর্ড · মোট {new Intl.NumberFormat('bn-BD').format(totalRows)}টি</p></div>{currentFields && role === 'super_admin' && <button className="primary-button" onClick={() => { setEditing(null); setFormOpen(true) }}><Plus size={17} /> নতুন যোগ করুন</button>}</div>
     {error && <div className="notice error-notice">{error}</div>}
     {formOpen && currentFields && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) { setFormOpen(false); setEditing(null) } }}><section className="entry-modal"><div className="modal-heading"><div><b>{editing ? 'সদস্যের তথ্য সম্পাদনা' : `নতুন ${label}`}</b><span>{editing ? 'পরিবর্তন সংরক্ষণ করলে সদস্যের তথ্য হালনাগাদ হবে' : 'তথ্য সংরক্ষণ হলে ডেটাবেসে যুক্ত হবে'}</span></div><button className="close-modal" onClick={() => { setFormOpen(false); setEditing(null) }} aria-label="বন্ধ"><X size={18} /></button></div><form onSubmit={add} className="entry-form"><div className="field-grid">{currentFields.map((field) => <label key={field.key}>{field.label}{field.type === 'select' ? <select name={field.key} required={field.required} defaultValue="">{field.key === 'member_id' ? <><option value="">সদস্য বেছে নিন</option>{members.map((member) => <option value={member.id} key={member.id}>{member.member_id} · {member.full_name}</option>)}</> : <><option value="">নির্বাচন করুন</option>{field.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</>}</select> : <input name={field.key} type={field.type ?? 'text'} required={field.required} readOnly={Boolean(editing?.auth_user_id && field.key === 'email')} min={field.type === 'number' ? '0.01' : undefined} step={field.type === 'number' ? '0.01' : undefined} defaultValue={editing ? String(editing[field.key] ?? '') : field.key === 'joining_date' || field.key === 'payment_date' || field.key === 'issue_date' || field.key === 'start_date' || field.key === 'disbursement_date' ? new Date().toISOString().slice(0,10) : field.key === 'collection_month' ? String(new Date().getMonth()+1) : field.key === 'collection_year' ? String(new Date().getFullYear()) : undefined} />}</label>)}</div><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => { setFormOpen(false); setEditing(null) }}>বাতিল</button><button className="primary-button" disabled={saving}>{saving ? 'সংরক্ষণ হচ্ছে…' : 'সংরক্ষণ করুন'}</button></div></form></section></div>}
-    {page === 'members' && <div className="member-help"><ShieldCheck size={18} /><span><b>সদস্যের লগইন:</b> সদস্য যোগের পর “লগইন লিংক পাঠান” চাপলে সদস্যের প্রধান Gmail-এ লিংক যাবে। অন্য Gmail যুক্ত করতে “বিকল্প Gmail যোগ” ব্যবহার করুন। সদস্যকে সরালে তার পরিচয় ও লগইন মুছবে, আর্থিক হিসাব পরিচয়হীনভাবে থাকবে।</span></div>}
+    {page === 'members' && <div className="member-help"><ShieldCheck size={18} /><span><b>সদস্যের লগইন:</b> সদস্য যোগের পর “লগইন লিংক পাঠান” চাপলে সদস্যের প্রধান Gmail-এ লিংক যাবে। সদস্যের অন্য Gmail account অনুমোদন করতে “Gmail অনুমোদন” চাপুন। সদস্যকে সরালে তার পরিচয় ও লগইন মুছবে, আর্থিক হিসাব পরিচয়হীনভাবে থাকবে।</span></div>}
     {receipt && (
       <div className="modal-backdrop receipt-backdrop">
         <section className="receipt-dialog">
@@ -479,7 +517,7 @@ function ModulePage({ page, label, role, userId, email }: { page: string; label:
         </section>
       </div>
     )}
-    <section className="panel records-panel"><div className="records-toolbar"><b>{label} তালিকা</b><input aria-label="সব রেকর্ডে খুঁজুন" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="সব রেকর্ডে খুঁজুন…" /><button className="secondary-button" onClick={() => void load()}>রিফ্রেশ</button></div><div className="table-scroll"><table><thead><tr>{currentColumns.map((col) => <th key={col.key}>{col.label}</th>)}{page === 'members' && <th>ব্যবস্থা</th>}</tr></thead><tbody>{visibleRows.map((row, index) => <tr key={String(row.id ?? index)}>{currentColumns.map((col) => <td key={col.key}>{col.money ? fmt(Number(row[col.key] ?? 0)) : col.key === 'member_id' && page !== 'members' ? (members.find((m) => m.id === row.member_id)?.member_id ?? String(row[col.key] ?? '').slice(0,8)) : displayValue(col.key, row[col.key])}</td>)}{page === 'members' && <td className="row-actions"><button className="row-action row-edit" onClick={() => { setEditing(row); setFormOpen(true) }}>সম্পাদনা</button><button className="row-action row-login" disabled={saving} onClick={() => void sendLoginLink(row)}>লগইন লিংক পাঠান</button><button className="row-action" disabled={saving} onClick={() => void manageLogin(row, false)}>বিকল্প Gmail যোগ</button><button className="row-action row-reactivate" disabled={saving} onClick={() => void manageLogin(row, true)}>Gmail বদলান</button><button className="row-action row-delete" disabled={saving} onClick={() => void deleteMember(row)}>স্থায়ীভাবে মুছুন</button></td>}</tr>)}</tbody></table>{loading ? <div className="table-empty">তথ্য আসছে…</div> : !visibleRows.length && <div className="table-empty">{search ? 'এই খোঁজে কোনো রেকর্ড নেই।' : 'এখনো কোনো তথ্য নেই। বাস্তব তথ্য যোগ হলে এখানে দেখা যাবে।'}</div>}</div><div className="pagination"><span>পাতা {new Intl.NumberFormat('bn-BD').format(pageIndex + 1)} / {new Intl.NumberFormat('bn-BD').format(Math.max(1, Math.ceil(totalRows / 100)))}</span><div><button className="secondary-button" disabled={pageIndex === 0 || loading} onClick={() => setPageIndex((n) => n - 1)}>আগের পাতা</button><button className="secondary-button" disabled={(pageIndex + 1) * 100 >= totalRows || loading} onClick={() => setPageIndex((n) => n + 1)}>পরের পাতা</button></div></div></section></>
+    <section className="panel records-panel"><div className="records-toolbar"><b>{label} তালিকা</b><input aria-label="সব রেকর্ডে খুঁজুন" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="সব রেকর্ডে খুঁজুন…" /><button className="secondary-button" onClick={() => void load()}>রিফ্রেশ</button></div><div className="table-scroll"><table><thead><tr>{currentColumns.map((col) => <th key={col.key}>{col.label}</th>)}{page === 'members' && <th>ব্যবস্থা</th>}</tr></thead><tbody>{visibleRows.map((row, index) => <tr key={String(row.id ?? index)}>{currentColumns.map((col) => <td key={col.key}>{col.money ? fmt(Number(row[col.key] ?? 0)) : col.key === 'member_id' && page !== 'members' ? (members.find((m) => m.id === row.member_id)?.member_id ?? String(row[col.key] ?? '').slice(0,8)) : displayValue(col.key, row[col.key])}</td>)}{page === 'members' && <td className="row-actions"><button className="row-action row-edit" onClick={() => { setEditing(row); setFormOpen(true) }}>সম্পাদনা</button><button className="row-action row-login" disabled={saving} onClick={() => void sendLoginLink(row)}>লগইন লিংক পাঠান</button><button className="row-action" disabled={saving} onClick={() => void manageLogin(row, false)}>Gmail অনুমোদন</button><button className="row-action row-reactivate" disabled={saving} onClick={() => void manageLogin(row, true)}>Gmail বদলান</button><button className="row-action row-delete" disabled={saving} onClick={() => void deleteMember(row)}>স্থায়ীভাবে মুছুন</button></td>}</tr>)}</tbody></table>{loading ? <div className="table-empty">তথ্য আসছে…</div> : !visibleRows.length && <div className="table-empty">{search ? 'এই খোঁজে কোনো রেকর্ড নেই।' : 'এখনো কোনো তথ্য নেই। বাস্তব তথ্য যোগ হলে এখানে দেখা যাবে।'}</div>}</div><div className="pagination"><span>পাতা {new Intl.NumberFormat('bn-BD').format(pageIndex + 1)} / {new Intl.NumberFormat('bn-BD').format(Math.max(1, Math.ceil(totalRows / 100)))}</span><div><button className="secondary-button" disabled={pageIndex === 0 || loading} onClick={() => setPageIndex((n) => n - 1)}>আগের পাতা</button><button className="secondary-button" disabled={(pageIndex + 1) * 100 >= totalRows || loading} onClick={() => setPageIndex((n) => n + 1)}>পরের পাতা</button></div></div></section></>
 }
 
 function FundModule({ label }: { label: string }) {
