@@ -24,6 +24,7 @@ const navigation: { label: string; icon: LucideIcon; section?: string; page: Tab
 ]
 const fmt = (value: number) => `৳${new Intl.NumberFormat('bn-BD', { maximumFractionDigits: 0 }).format(value)}`
 const logoUrl = `${import.meta.env.BASE_URL}icon.jpg`
+const authRedirectUrl = 'https://almuafydesign.github.io/swapnotori/'
 const dateBn = new Intl.DateTimeFormat('bn-BD', { dateStyle: 'long', timeZone: 'Asia/Dhaka' }).format(new Date())
 const monthName = (n: number) => new Intl.DateTimeFormat('bn-BD', { month: 'short', timeZone: 'Asia/Dhaka' }).format(new Date(2026, n - 1, 1))
 const prettyDate = (date: string) => new Intl.DateTimeFormat('bn-BD', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Dhaka' }).format(new Date(`${date.slice(0, 10)}T00:00:00+06:00`))
@@ -73,6 +74,15 @@ export default function App() {
     void supabase.auth.getSession().then(({ data }) => setSession(data.session))
     const { data } = supabase.auth.onAuthStateChange((_event, next) => setSession(next))
     return () => data.subscription.unsubscribe()
+  }, [])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+    const authError = params.get('error')
+    if (!authError) return
+    if (params.get('error_code') === 'otp_expired') setError('এই ইমেইল লিংকের মেয়াদ শেষ হয়েছে বা এটি আগে খোলা হয়েছে। ইমেইল ঠিকানা লিখে “ইমেইলে লগইন লিংক পাঠান” চাপুন, তারপর নতুন ইমেইলের লিংক খুলুন।')
+    else setError('ইমেইল লিংকটি কাজ করেনি। নতুন লগইন লিংক পাঠিয়ে আবার চেষ্টা করুন।')
+    window.history.replaceState(null, document.title, `${window.location.pathname}${window.location.search}`)
   }, [])
 
   useEffect(() => {
@@ -152,7 +162,7 @@ export default function App() {
   const sendLoginLink = async () => {
     if (!supabase || !email.trim()) { setError('আগে ইমেইল ঠিকানা লিখুন।'); return }
     setBusy(true); setError(''); setNotice('')
-    const { error: e } = await supabase.auth.signInWithOtp({ email: email.trim().toLowerCase(), options: { emailRedirectTo: new URL(import.meta.env.BASE_URL, window.location.origin).toString() } })
+    const { error: e } = await supabase.auth.signInWithOtp({ email: email.trim().toLowerCase(), options: { emailRedirectTo: authRedirectUrl } })
     if (e) setError('লগইন লিংক পাঠানো যায়নি। ইমেইল ঠিকানা যাচাই করে আবার চেষ্টা করুন।')
     else setNotice('ইমেইলে নিরাপদ লগইন লিংক পাঠানো হয়েছে। লিংকে চাপ দিলেই অ্যাপে প্রবেশ হবে।')
     setBusy(false)
@@ -331,7 +341,7 @@ function ModulePage({ page, label, role, userId, email }: { page: string; label:
     if (!address) return
     setError(''); setSaving(true)
     const normalizedEmail = address.toLowerCase()
-    const sent = await supabase.auth.signInWithOtp({ email: normalizedEmail, options: { emailRedirectTo: new URL(import.meta.env.BASE_URL, window.location.origin).toString() } })
+    const sent = await supabase.auth.signInWithOtp({ email: normalizedEmail, options: { emailRedirectTo: authRedirectUrl } })
     if (sent.error) { setError('লগইন লিংক পাঠানো যায়নি। ইমেইল ঠিকানা যাচাই করে আবার চেষ্টা করুন।'); setSaving(false); return }
     const profile = await supabase.from('profiles').select('id,role').eq('email', normalizedEmail).maybeSingle()
     if (profile.error || !profile.data || profile.data.role !== 'member') { setError('লিংক পাঠানো হয়েছে, তবে অ্যাকাউন্ট যুক্ত করা যায়নি। একটু পরে আবার চেষ্টা করুন।'); setSaving(false); return }
