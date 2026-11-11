@@ -27,6 +27,16 @@ const logoUrl = `${import.meta.env.BASE_URL}icon.jpg`
 const dateBn = new Intl.DateTimeFormat('bn-BD', { dateStyle: 'long', timeZone: 'Asia/Dhaka' }).format(new Date())
 const monthName = (n: number) => new Intl.DateTimeFormat('bn-BD', { month: 'short', timeZone: 'Asia/Dhaka' }).format(new Date(2026, n - 1, 1))
 const prettyDate = (date: string) => new Intl.DateTimeFormat('bn-BD', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Dhaka' }).format(new Date(`${date.slice(0, 10)}T00:00:00+06:00`))
+async function fetchAllRows<T>(fetchPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>) {
+  const rows: T[] = []
+  for (let from = 0; ; from += 1000) {
+    const result = await fetchPage(from, from + 999)
+    if (result.error) return { data: rows, error: result.error }
+    const batch = result.data ?? []
+    rows.push(...batch)
+    if (batch.length < 1000) return { data: rows, error: null }
+  }
+}
 const displayValue = (key: string, raw: unknown) => {
   if (raw === null || raw === undefined || raw === '') return '—'
   const value = String(raw)
@@ -85,22 +95,26 @@ export default function App() {
   }, [session])
 
   useEffect(() => {
+    if (role === 'member' && page !== 'dashboard') { setPage('dashboard'); setMenuOpen(false) }
+  }, [role, page])
+
+  useEffect(() => {
     if (!session || role !== 'super_admin' || !supabase) { setMetrics([]); return }
     let alive = true
     const load = async () => {
       setLoading(true); setError('')
       const [members, savings, fees, shares, tx, investments, loans, activity] = await Promise.all([
         supabase!.from('members').select('id,status', { count: 'exact', head: true }),
-        supabase!.from('monthly_savings').select('amount,collection_month,collection_year'),
-        supabase!.from('annual_fees').select('amount,payment_date'),
-        supabase!.from('share_registry').select('share_value').eq('ownership_status', 'active'),
-        supabase!.from('financial_transactions').select('amount,transaction_type'),
-        supabase!.from('investments').select('current_value'),
-        supabase!.from('qard_hasan_loans').select('outstanding_amount'),
+        fetchAllRows((from,to) => supabase!.from('monthly_savings').select('amount,collection_month,collection_year').range(from,to)),
+        fetchAllRows((from,to) => supabase!.from('annual_fees').select('amount,payment_date').range(from,to)),
+        fetchAllRows((from,to) => supabase!.from('share_registry').select('share_value').eq('ownership_status', 'active').range(from,to)),
+        fetchAllRows((from,to) => supabase!.from('financial_transactions').select('amount,transaction_type').range(from,to)),
+        fetchAllRows((from,to) => supabase!.from('investments').select('current_value').range(from,to)),
+        fetchAllRows((from,to) => supabase!.from('qard_hasan_loans').select('outstanding_amount').range(from,to)),
         supabase!.from('financial_transactions').select('transaction_number,transaction_date,category,amount,transaction_type').order('transaction_date', { ascending: false }).limit(5),
       ])
       const failed = [members, savings, fees, shares, tx, investments, loans, activity].find((r) => r.error)
-      if (alive && failed?.error) setError(failed.error.message)
+      if (alive && failed?.error) { setError('ডেটাবেস থেকে সব হিসাব আনা যায়নি। সংযোগ ঠিক হলে রিফ্রেশ করুন; অসম্পূর্ণ যোগফল দেখানো হচ্ছে না।'); setMetrics([]); setChart([]); setRecent([]); setLoading(false); return }
       const sum = (rows: { amount?: number; share_value?: number; current_value?: number; outstanding_amount?: number }[] | null, key: 'amount' | 'share_value' | 'current_value' | 'outstanding_amount') => rows?.reduce((total, row) => total + Number(row[key] ?? 0), 0) ?? 0
       const year = new Date().getFullYear()
       const points = Array.from({ length: 12 }, (_, index) => {
@@ -144,7 +158,7 @@ export default function App() {
     <aside className={`sidebar ${menuOpen ? 'sidebar-open' : ''}`}>
       <div className="brand"><img src={logoUrl} alt="স্বপ্নতরী লোগো" /><div><strong>স্বপ্নতরী</strong><span>লক্ষ্য সুদূরপ্রসারী</span></div><button className="close-menu" onClick={() => setMenuOpen(false)} aria-label="মেনু বন্ধ"><X size={19} /></button></div>
       <div className="workspace-label">প্রধান মেনু</div>
-      <nav>{navigation.filter((item) => role === 'super_admin' || ['dashboard'].includes(item.page)).map((item) => <div key={item.page}>{item.section && <div className="workspace-label nav-section">{item.section}</div>}<button className={`nav-item ${page === item.page ? 'active' : ''}`} onClick={() => { setPage(item.page); setMenuOpen(false) }}><item.icon size={18} strokeWidth={1.8} /><span>{item.label}</span>{page === item.page && <span className="active-dot" />}</button></div>)}</nav>
+      <nav>{navigation.filter((item) => role === 'super_admin' || ['dashboard'].includes(item.page)).map((item) => <div key={item.page}>{item.section && <div className="workspace-label nav-section">{item.section}</div>}<button className={`nav-item nav-${item.page} ${page === item.page ? 'active' : ''}`} onClick={() => { setPage(item.page); setMenuOpen(false) }}><item.icon size={18} strokeWidth={1.8} /><span>{item.label}</span>{page === item.page && <span className="active-dot" />}</button></div>)}</nav>
       <div className="sidebar-bottom"><div className="trust-card"><div className="trust-icon"><ShieldCheck size={17} /></div><div><b>নিরাপদ ও সুরক্ষিত</b><span>আপনার তথ্য সুরক্ষিত আছে</span></div></div><button className="nav-item" onClick={() => void supabase?.auth.signOut()}><LogOut size={18} /><span>লগআউট</span></button><small>স্বপ্নতরী · ২০২৬</small></div>
     </aside>
     {menuOpen && <button className="scrim" aria-label="মেনু বন্ধ" onClick={() => setMenuOpen(false)} />}
@@ -178,12 +192,14 @@ function MemberNotice() {
       const { data: member, error: memberError } = await supabase.from('members').select('id,member_id,full_name').single()
       if (memberError || !member) { if (alive) setMessage(memberError?.code === 'PGRST116' ? 'আপনার লগইন অ্যাকাউন্টের সাথে সদস্য-পরিচিতি যুক্ত করা হয়নি।' : 'আপনার সদস্য-তথ্য আনা যায়নি।'); return }
       const [savings, fees, shares, loans] = await Promise.all([
-        supabase.from('monthly_savings').select('receipt_number,amount,collection_month,collection_year,payment_date').eq('member_id', member.id).order('payment_date', { ascending: false }),
-        supabase.from('annual_fees').select('receipt_number,financial_year,amount,payment_date').eq('member_id', member.id).order('payment_date', { ascending: false }),
-        supabase.from('share_registry').select('share_number,share_value,issue_date,payment_status,ownership_status').eq('member_id', member.id).order('issue_date', { ascending: false }),
-        supabase.from('qard_hasan_loans').select('principal_amount,outstanding_amount,disbursement_date,status').eq('member_id', member.id).order('disbursement_date', { ascending: false }),
+        fetchAllRows((from,to) => supabase!.from('monthly_savings').select('receipt_number,amount,collection_month,collection_year,payment_date').eq('member_id', member.id).order('payment_date', { ascending: false }).range(from,to)),
+        fetchAllRows((from,to) => supabase!.from('annual_fees').select('receipt_number,financial_year,amount,payment_date').eq('member_id', member.id).order('payment_date', { ascending: false }).range(from,to)),
+        fetchAllRows((from,to) => supabase!.from('share_registry').select('share_number,share_value,issue_date,payment_status,ownership_status').eq('member_id', member.id).order('issue_date', { ascending: false }).range(from,to)),
+        fetchAllRows((from,to) => supabase!.from('qard_hasan_loans').select('principal_amount,outstanding_amount,disbursement_date,status').eq('member_id', member.id).order('disbursement_date', { ascending: false }).range(from,to)),
       ])
       if (!alive) return
+      const failed = [savings, fees, shares, loans].find((result) => result.error)
+      if (failed?.error) { setMessage('আপনার முழு হিসাব আনা যায়নি। Internet সংযোগ ঠিক করে আবার খুলুন; অসম্পূর্ণ অঙ্ক দেখানো হচ্ছে না.'); return }
       setHistory({ savings: (savings.data ?? []) as Record<string, unknown>[], fees: (fees.data ?? []) as Record<string, unknown>[], shares: (shares.data ?? []) as Record<string, unknown>[], loans: (loans.data ?? []) as Record<string, unknown>[] })
       setRecord({ name: member.full_name, memberId: member.member_id, savings: (savings.data ?? []).reduce((a, r) => a + Number(r.amount), 0), fees: (fees.data ?? []).reduce((a, r) => a + Number(r.amount), 0), shares: (shares.data ?? []).reduce((a, r) => a + Number(r.share_value), 0), loan: (loans.data ?? []).reduce((a, r) => a + Number(r.outstanding_amount), 0) })
     }
@@ -192,7 +208,13 @@ function MemberNotice() {
   }, [])
   return <><div className="welcome-row"><div><div className="eyebrow">আসসালামু আলাইকুম</div><h1>{record?.name ?? 'আপনার ব্যক্তিগত হিসাব'}</h1><p>{record ? `সদস্য নম্বর ${record.memberId} · আপনার হিসাবের সারসংক্ষেপ` : 'আপনার ব্যক্তিগত আর্থিক তথ্য'}</p></div></div>{message && <div className="notice error-notice">{message}</div>}{record ? <><div className="metrics-grid member-metrics">{[{ label: 'মোট মাসিক সঞ্চয়', amount: record.savings, icon: WalletCards, tone: 'green' }, { label: 'বার্ষিক ফি', amount: record.fees, icon: FileChartColumn, tone: 'gold' }, { label: 'সক্রিয় শেয়ার মূল্য', amount: record.shares, icon: Coins, tone: 'purple' }, { label: 'করযে হাসানা বকেয়া', amount: record.loan, icon: HandCoins, tone: 'blue' }].map((item) => <article className="metric-card" key={item.label}><div className={`metric-icon ${item.tone}`}><item.icon size={19} /></div><span className="metric-label">{item.label}</span><strong>{fmt(item.amount)}</strong><span className="metric-foot">আপনার নিজস্ব হিসাব</span></article>)}</div><div className="member-history-grid"><MemberHistory title="মাসিক সঞ্চয়ের ইতিহাস" rows={history.savings} columns={[{ key: 'receipt_number', label: 'রসিদ' }, { key: 'collection_month', label: 'মাস' }, { key: 'collection_year', label: 'বছর' }, { key: 'amount', label: 'পরিমাণ' }, { key: 'payment_date', label: 'তারিখ' }]} /><MemberHistory title="বার্ষিক ফি" rows={history.fees} columns={[{ key: 'financial_year', label: 'অর্থবছর' }, { key: 'amount', label: 'পরিমাণ' }, { key: 'payment_date', label: 'তারিখ' }]} /><MemberHistory title="শেয়ার" rows={history.shares} columns={[{ key: 'share_number', label: 'শেয়ার নম্বর' }, { key: 'share_value', label: 'মূল্য' }, { key: 'payment_status', label: 'পরিশোধ' }, { key: 'issue_date', label: 'ইস্যুর তারিখ' }]} /><MemberHistory title="করযে হাসানা" rows={history.loans} columns={[{ key: 'principal_amount', label: 'মূল ঋণ' }, { key: 'outstanding_amount', label: 'বকেয়া' }, { key: 'disbursement_date', label: 'প্রদানের তারিখ' }, { key: 'status', label: 'অবস্থা' }]} /></div></> : !message && <div className="member-card"><div className="metric-icon green"><ShieldCheck size={20} /></div><div><h2>আপনার ব্যক্তিগত হিসাব</h2><p>আপনার তথ্য যাচাই হচ্ছে…</p></div></div>}</>
 }
-function MemberHistory({ title, rows, columns }: { title: string; rows: Record<string, unknown>[]; columns: { key: string; label: string }[] }) { return <section className="panel member-history"><h2>{title}</h2><div className="table-scroll"><table><thead><tr>{columns.map((column) => <th key={column.key}>{column.label}</th>)}</tr></thead><tbody>{rows.slice(0, 8).map((row, index) => <tr key={String(row.id ?? row.receipt_number ?? index)}>{columns.map((column) => <td key={column.key}>{column.key.endsWith('_date') || column.key === 'payment_date' || column.key === 'issue_date' || column.key === 'disbursement_date' ? displayValue('x_date', row[column.key]) : ['amount', 'share_value', 'principal_amount', 'outstanding_amount'].includes(column.key) ? fmt(Number(row[column.key] ?? 0)) : column.key === 'collection_month' ? monthName(Number(row[column.key])) : displayValue(column.key, row[column.key])}</td>)}</tr>)}</tbody></table>{!rows.length && <div className="table-empty">এখনো কোনো তথ্য নেই</div>}</div></section> }
+function MemberHistory({ title, rows, columns }: { title: string; rows: Record<string, unknown>[]; columns: { key: string; label: string }[] }) {
+  const [pageIndex, setPageIndex] = useState(0)
+  const pageSize = 8
+  useEffect(() => setPageIndex(0), [rows])
+  const visible = rows.slice(pageIndex * pageSize, pageIndex * pageSize + pageSize)
+  return <section className="panel member-history"><h2>{title}<small>{new Intl.NumberFormat('bn-BD').format(rows.length)}টি</small></h2><div className="table-scroll"><table><thead><tr>{columns.map((column) => <th key={column.key}>{column.label}</th>)}</tr></thead><tbody>{visible.map((row, index) => <tr key={String(row.id ?? row.receipt_number ?? index)}>{columns.map((column) => <td key={column.key}>{column.key.endsWith('_date') || column.key === 'payment_date' || column.key === 'issue_date' || column.key === 'disbursement_date' ? displayValue('x_date', row[column.key]) : ['amount', 'share_value', 'principal_amount', 'outstanding_amount'].includes(column.key) ? fmt(Number(row[column.key] ?? 0)) : column.key === 'collection_month' ? monthName(Number(row[column.key])) : displayValue(column.key, row[column.key])}</td>)}</tr>)}</tbody></table>{!rows.length && <div className="table-empty">এখনো কোনো তথ্য নেই</div>}</div>{rows.length > pageSize && <div className="mini-pagination"><button disabled={pageIndex === 0} onClick={() => setPageIndex((n) => n - 1)}>আগে</button><span>{pageIndex + 1}/{Math.ceil(rows.length / pageSize)}</span><button disabled={(pageIndex + 1) * pageSize >= rows.length} onClick={() => setPageIndex((n) => n + 1)}>পরে</button></div>}</section>
+}
 type FormField = { key: string; label: string; type?: string; required?: boolean; options?: { value: string; label: string }[] }
 const membersField: FormField = { key: 'member_id', label: 'সদস্য', type: 'select', required: true }
 function ModulePage({ page, label, role }: { page: string; label: string; role: string }) {
@@ -200,9 +222,13 @@ function ModulePage({ page, label, role }: { page: string; label: string; role: 
   const [members, setMembers] = useState<{ id: string; member_id: string; full_name: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [formOpen, setFormOpen] = useState(false)
+  const [editing, setEditing] = useState<Record<string, unknown> | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [pageIndex, setPageIndex] = useState(0)
+  const [totalRows, setTotalRows] = useState(0)
   const tablePages: TableKey[] = ['members', 'monthly_savings', 'annual_fees', 'share_registry', 'financial_transactions', 'investments', 'qard_hasan_loans']
   const fields: Partial<Record<TableKey, FormField[]>> = {
     members: [{ key: 'full_name', label: 'পূর্ণ নাম', required: true }, { key: 'father_name', label: 'পিতার নাম' }, { key: 'mother_name', label: 'মাতার নাম' }, { key: 'mobile', label: 'মোবাইল নম্বর' }, { key: 'whatsapp', label: 'হোয়াটসঅ্যাপ নম্বর' }, { key: 'email', label: 'ইমেইল ঠিকানা', type: 'email' }, { key: 'joining_date', label: 'যোগদানের তারিখ', type: 'date', required: true }, { key: 'present_address', label: 'বর্তমান ঠিকানা' }, { key: 'permanent_address', label: 'স্থায়ী ঠিকানা' }, { key: 'notes', label: 'অতিরিক্ত তথ্য' }],
@@ -222,22 +248,37 @@ function ModulePage({ page, label, role }: { page: string; label: string; role: 
     investments: [{ key: 'title', label: 'বিনিয়োগ' }, { key: 'investment_type', label: 'ধরন' }, { key: 'invested_amount', label: 'বিনিয়োগকৃত', money: true }, { key: 'current_value', label: 'বর্তমান মূল্য', money: true }, { key: 'status', label: 'অবস্থা' }],
     qard_hasan_loans: [{ key: 'member_id', label: 'সদস্য আইডি' }, { key: 'principal_amount', label: 'মূল ঋণ', money: true }, { key: 'outstanding_amount', label: 'বকেয়া', money: true }, { key: 'disbursement_date', label: 'প্রদানের তারিখ' }, { key: 'status', label: 'অবস্থা' }],
   }
-  const load = async () => {
+  const searchableColumns: Partial<Record<TableKey, string[]>> = {
+    members: ['member_id','full_name','father_name','mother_name','mobile','whatsapp','email','present_address','permanent_address','notes'],
+    monthly_savings: ['receipt_number','payment_method','reference_number','notes'],
+    annual_fees: ['receipt_number','financial_year','payment_method','reference_number','notes'],
+    share_registry: ['share_number','payment_status','notes'],
+    financial_transactions: ['transaction_number','category','description','reference_number','payment_method'],
+    investments: ['title','investment_type','status','notes'],
+    qard_hasan_loans: ['notes','status'],
+  }
+  const load = async (targetPage = pageIndex) => {
     if (!supabase || !tablePages.includes(page as TableKey)) { setLoading(false); return }
     setLoading(true); setError('')
-    const query = await supabase.from(page as TableKey).select('*').order('created_at', { ascending: false }).limit(100)
-    if (query.error) setError('এই তালিকার তথ্য আনা যায়নি। Supabase migration এবং অ্যাক্সেস নীতি যাচাই করুন।')
-    else setRows((query.data ?? []) as Record<string, unknown>[])
+    let builder = supabase.from(page as TableKey).select('*', { count: 'exact' })
+    const term = searchQuery.trim().replace(/[,%()*\\]/g, ' ').replace(/\s+/g, ' ')
+    const columnsToSearch = searchableColumns[page as TableKey] ?? []
+    if (term && columnsToSearch.length) builder = builder.or(columnsToSearch.map((column) => `${column}.ilike.%${term}%`).join(','))
+    const query = await builder.order('created_at', { ascending: false }).range(targetPage * 100, targetPage * 100 + 99)
+    if (query.error) { setError('এই পাতার তথ্য আনা যায়নি। সংযোগ ঠিক করে আবার রিফ্রেশ করুন।'); setRows([]); setTotalRows(0) }
+    else { setRows((query.data ?? []) as Record<string, unknown>[]); setTotalRows(query.count ?? 0) }
     if (['monthly_savings', 'annual_fees', 'share_registry'].includes(page)) {
-      const result = await supabase.from('members').select('id,member_id,full_name').order('member_number')
+      const result = await fetchAllRows((from,to) => supabase!.from('members').select('id,member_id,full_name').order('member_number').range(from,to))
       if (!result.error) setMembers(result.data ?? [])
     }
     setLoading(false)
   }
-  useEffect(() => { setRows([]); void load() }, [page])
+  useEffect(() => { setRows([]); setPageIndex(0); setSearch(''); setSearchQuery('') }, [page])
+  useEffect(() => { const timer = window.setTimeout(() => { setSearchQuery(search); setPageIndex(0) }, 320); return () => window.clearTimeout(timer) }, [search])
+  useEffect(() => { void load(pageIndex) }, [page, pageIndex, searchQuery])
   const currentFields = fields[page as TableKey]
   const currentColumns = columns[page as TableKey] ?? []
-  const visibleRows = rows.filter((row) => Object.values(row).some((value) => String(value ?? '').toLowerCase().includes(search.toLowerCase())))
+  const visibleRows = rows
   const add = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); if (!supabase || !currentFields) return
     setSaving(true); setError('')
@@ -249,6 +290,8 @@ function ModulePage({ page, label, role }: { page: string; label: string; role: 
       const { transaction_type, ...fields } = payload
       const posted = await supabase.rpc('post_financial_transaction', { payload: { ...fields, transaction_type, amount: Number(fields.amount), transaction_number: `SWT-TXN-${crypto.randomUUID()}` } })
       result = { error: posted.error }
+    } else if (page === 'members' && editing && typeof editing.id === 'string') {
+      result = await supabase.from('members').update({ ...payload, email: payload.email || null }).eq('id', editing.id)
     } else if (page === 'members') {
       const inserted = await supabase.from('members').insert({ ...payload, email: payload.email || null, status: 'active' }).select('id').single()
       result = { error: inserted.error }
@@ -267,10 +310,11 @@ function ModulePage({ page, label, role }: { page: string; label: string; role: 
     else if (page === 'annual_fees') result = await supabase.from('annual_fees').insert({ ...payload, amount: Number(payload.amount), receipt_number: `SWT-AF-${crypto.randomUUID()}`, created_by: (await supabase.auth.getUser()).data.user?.id })
     else result = await supabase.from('share_registry').insert({ ...payload, share_value: Number(payload.share_value), member_id: payload.member_id, created_by: (await supabase.auth.getUser()).data.user?.id })
     if (result.error) setError(result.error.message.includes('duplicate') || result.error.message.includes('unique') ? 'এই সময়ের জন্য এন্ট্রি আগে থেকেই আছে। তালিকা যাচাই করুন।' : 'তথ্য সংরক্ষণ হয়নি। প্রয়োজনীয় তথ্য ও ডেটাবেস নীতি যাচাই করুন।')
-    else { setFormOpen(false); event.currentTarget.reset(); await load() }
+    else { setFormOpen(false); setEditing(null); event.currentTarget.reset(); setPageIndex(0); await load(0) }
     setSaving(false)
   }
   const deactivate = async (id: unknown) => { if (!supabase || typeof id !== 'string') return; const result = await supabase.from('members').update({ status: 'inactive' }).eq('id', id); if (result.error) setError('সদস্যের অবস্থা পরিবর্তন হয়নি।'); else await load() }
+  const reactivate = async (id: unknown) => { if (!supabase || typeof id !== 'string') return; const result = await supabase.from('members').update({ status: 'active' }).eq('id', id); if (result.error) setError('সদস্য পুনরায় চালু হয়নি।'); else await load() }
   const attachLogin = async (row: Record<string, unknown>) => {
     if (!supabase || typeof row.id !== 'string') return
     const address = window.prompt('Supabase Auth-এ তৈরি সদস্যের ইমেইল লিখুন')?.trim()
@@ -284,11 +328,11 @@ function ModulePage({ page, label, role }: { page: string; label: string; role: 
   if (page === 'funds') return <FundModule label={label} />
   if (page === 'reports') return <ReportModule label={label} />
   if (!tablePages.includes(page as TableKey)) return <><div className="welcome-row"><div><div className="eyebrow">স্বপ্নতরী · ব্যবস্থাপনা</div><h1>{label}</h1><p>এই মডিউলটি প্রস্তুত করা বাকি।</p></div></div><section className="panel module-panel"><div className="module-empty"><div className="chart-mark"><LayoutDashboard size={23} /></div><h2>এই অংশটি এখনো প্রস্তুত নয়</h2><p>এখানে কোনো নমুনা হিসাব দেখানো হচ্ছে না। বাস্তব ডেটা ও নিরাপদ কার্যপ্রবাহ যুক্ত না হওয়া পর্যন্ত এই মডিউলটি বন্ধ আছে।</p></div></section></>
-  return <><div className="welcome-row"><div><div className="eyebrow">স্বপ্নতরী · ব্যবস্থাপনা</div><h1>{label}</h1><p>ডেটাবেসে থাকা তথ্য · সর্বশেষ ১০০টি</p></div>{currentFields && role === 'super_admin' && <button className="primary-button" onClick={() => setFormOpen(true)}><Plus size={17} /> নতুন যোগ করুন</button>}</div>
+  return <><div className="welcome-row"><div><div className="eyebrow">স্বপ্নতরী · ব্যবস্থাপনা</div><h1>{label}</h1><p>ডেটাবেসে থাকা সব রেকর্ড · মোট {new Intl.NumberFormat('bn-BD').format(totalRows)}টি</p></div>{currentFields && role === 'super_admin' && <button className="primary-button" onClick={() => { setEditing(null); setFormOpen(true) }}><Plus size={17} /> নতুন যোগ করুন</button>}</div>
     {error && <div className="notice error-notice">{error}</div>}
-    {formOpen && currentFields && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setFormOpen(false) }}><section className="entry-modal"><div className="modal-heading"><div><b>নতুন {label}</b><span>তথ্য সংরক্ষণ হলে ডেটাবেসে যুক্ত হবে</span></div><button className="close-modal" onClick={() => setFormOpen(false)} aria-label="বন্ধ"><X size={18} /></button></div><form onSubmit={add} className="entry-form"><div className="field-grid">{currentFields.map((field) => <label key={field.key}>{field.label}{field.type === 'select' ? <select name={field.key} required={field.required} defaultValue="">{field.key === 'member_id' ? <><option value="">সদস্য বেছে নিন</option>{members.map((member) => <option value={member.id} key={member.id}>{member.member_id} · {member.full_name}</option>)}</> : <><option value="">নির্বাচন করুন</option>{field.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</>}</select> : <input name={field.key} type={field.type ?? 'text'} required={field.required} min={field.type === 'number' ? '0.01' : undefined} step={field.type === 'number' ? '0.01' : undefined} defaultValue={field.key === 'joining_date' || field.key === 'payment_date' || field.key === 'issue_date' || field.key === 'start_date' || field.key === 'disbursement_date' ? new Date().toISOString().slice(0,10) : field.key === 'collection_month' ? String(new Date().getMonth()+1) : field.key === 'collection_year' ? String(new Date().getFullYear()) : undefined} />}</label>)}</div><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setFormOpen(false)}>বাতিল</button><button className="primary-button" disabled={saving}>{saving ? 'সংরক্ষণ হচ্ছে…' : 'সংরক্ষণ করুন'}</button></div></form></section></div>}
+    {formOpen && currentFields && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) { setFormOpen(false); setEditing(null) } }}><section className="entry-modal"><div className="modal-heading"><div><b>{editing ? 'সদস্যের তথ্য সম্পাদনা' : `নতুন ${label}`}</b><span>{editing ? 'পরিবর্তন সংরক্ষণ করলে সদস্যের তথ্য হালনাগাদ হবে' : 'তথ্য সংরক্ষণ হলে ডেটাবেসে যুক্ত হবে'}</span></div><button className="close-modal" onClick={() => { setFormOpen(false); setEditing(null) }} aria-label="বন্ধ"><X size={18} /></button></div><form onSubmit={add} className="entry-form"><div className="field-grid">{currentFields.map((field) => <label key={field.key}>{field.label}{field.type === 'select' ? <select name={field.key} required={field.required} defaultValue="">{field.key === 'member_id' ? <><option value="">সদস্য বেছে নিন</option>{members.map((member) => <option value={member.id} key={member.id}>{member.member_id} · {member.full_name}</option>)}</> : <><option value="">নির্বাচন করুন</option>{field.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</>}</select> : <input name={field.key} type={field.type ?? 'text'} required={field.required} readOnly={Boolean(editing?.auth_user_id && field.key === 'email')} min={field.type === 'number' ? '0.01' : undefined} step={field.type === 'number' ? '0.01' : undefined} defaultValue={editing ? String(editing[field.key] ?? '') : field.key === 'joining_date' || field.key === 'payment_date' || field.key === 'issue_date' || field.key === 'start_date' || field.key === 'disbursement_date' ? new Date().toISOString().slice(0,10) : field.key === 'collection_month' ? String(new Date().getMonth()+1) : field.key === 'collection_year' ? String(new Date().getFullYear()) : undefined} />}</label>)}</div><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => { setFormOpen(false); setEditing(null) }}>বাতিল</button><button className="primary-button" disabled={saving}>{saving ? 'সংরক্ষণ হচ্ছে…' : 'সংরক্ষণ করুন'}</button></div></form></section></div>}
     {page === 'members' && <div className="member-help"><ShieldCheck size={18} /><span><b>সদস্যের লগইন চালু করতে:</b> Supabase → Authentication → Users-এ সদস্যের ইমেইল দিয়ে account তৈরি করুন; তারপর তালিকায় “লগইন যুক্ত” চাপুন। সদস্য তার password নিজে সেট করবেন।</span></div>}
-    <section className="panel records-panel"><div className="records-toolbar"><b>{label} তালিকা</b><input aria-label="তালিকায় খুঁজুন" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="তথ্য খুঁজুন…" /><button className="secondary-button" onClick={() => void load()}>রিফ্রেশ</button></div><div className="table-scroll"><table><thead><tr>{currentColumns.map((col) => <th key={col.key}>{col.label}</th>)}{page === 'members' && <th>ব্যবস্থা</th>}</tr></thead><tbody>{visibleRows.map((row, index) => <tr key={String(row.id ?? index)}>{currentColumns.map((col) => <td key={col.key}>{col.money ? fmt(Number(row[col.key] ?? 0)) : col.key === 'member_id' && page !== 'members' ? (members.find((m) => m.id === row.member_id)?.member_id ?? String(row[col.key] ?? '').slice(0,8)) : displayValue(col.key, row[col.key])}</td>)}{page === 'members' && <td className="row-actions">{row.auth_user_id ? <span className="linked-account">লগইন যুক্ত</span> : <button className="row-action" onClick={() => void attachLogin(row)}>লগইন যুক্ত</button>}{row.status === 'active' && <button className="row-action" onClick={() => void deactivate(row.id)}>নিষ্ক্রিয় করুন</button>}</td>}</tr>)}</tbody></table>{loading ? <div className="table-empty">তথ্য আসছে…</div> : !visibleRows.length && <div className="table-empty">{search ? 'কোনো মিল পাওয়া যায়নি।' : 'এখনো কোনো তথ্য নেই। বাস্তব তথ্য যোগ হলে এখানে দেখা যাবে।'}</div>}</div></section></>
+    <section className="panel records-panel"><div className="records-toolbar"><b>{label} তালিকা</b><input aria-label="সব রেকর্ডে খুঁজুন" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="সব রেকর্ডে খুঁজুন…" /><button className="secondary-button" onClick={() => void load()}>রিফ্রেশ</button></div><div className="table-scroll"><table><thead><tr>{currentColumns.map((col) => <th key={col.key}>{col.label}</th>)}{page === 'members' && <th>ব্যবস্থা</th>}</tr></thead><tbody>{visibleRows.map((row, index) => <tr key={String(row.id ?? index)}>{currentColumns.map((col) => <td key={col.key}>{col.money ? fmt(Number(row[col.key] ?? 0)) : col.key === 'member_id' && page !== 'members' ? (members.find((m) => m.id === row.member_id)?.member_id ?? String(row[col.key] ?? '').slice(0,8)) : displayValue(col.key, row[col.key])}</td>)}{page === 'members' && <td className="row-actions"><button className="row-action row-edit" onClick={() => { setEditing(row); setFormOpen(true) }}>সম্পাদনা</button>{row.auth_user_id ? <span className="linked-account">লগইন যুক্ত</span> : <button className="row-action" onClick={() => void attachLogin(row)}>লগইন যুক্ত</button>}{row.status === 'active' ? <button className="row-action" onClick={() => void deactivate(row.id)}>নিষ্ক্রিয় করুন</button> : <button className="row-action row-reactivate" onClick={() => void reactivate(row.id)}>আবার চালু</button>}</td>}</tr>)}</tbody></table>{loading ? <div className="table-empty">তথ্য আসছে…</div> : !visibleRows.length && <div className="table-empty">{search ? 'এই খোঁজে কোনো রেকর্ড নেই।' : 'এখনো কোনো তথ্য নেই। বাস্তব তথ্য যোগ হলে এখানে দেখা যাবে।'}</div>}</div><div className="pagination"><span>পাতা {new Intl.NumberFormat('bn-BD').format(pageIndex + 1)} / {new Intl.NumberFormat('bn-BD').format(Math.max(1, Math.ceil(totalRows / 100)))}</span><div><button className="secondary-button" disabled={pageIndex === 0 || loading} onClick={() => setPageIndex((n) => n - 1)}>আগের পাতা</button><button className="secondary-button" disabled={(pageIndex + 1) * 100 >= totalRows || loading} onClick={() => setPageIndex((n) => n + 1)}>পরের পাতা</button></div></div></section></>
 }
 
 function FundModule({ label }: { label: string }) {
@@ -300,8 +344,8 @@ function FundModule({ label }: { label: string }) {
   const load = async () => {
     if (!supabase) return
     setLoading(true)
-    const result = await supabase.from('financial_transactions').select('transaction_number,transaction_date,category,amount,description,reference_number').eq('transaction_type', 'fund').order('transaction_date', { ascending: false }).limit(100)
-    if (result.error) setError('তহবিলের লেনদেন আনা যায়নি।')
+    const result = await fetchAllRows((from,to) => supabase!.from('financial_transactions').select('transaction_number,transaction_date,category,amount,description,reference_number').eq('transaction_type', 'fund').order('transaction_date', { ascending: false }).range(from,to))
+    if (result.error) { setError('সব তহবিলের তথ্য আনা যায়নি। সংযোগ ঠিক করে আবার রিফ্রেশ করুন।'); setRows([]) }
     else { setRows(result.data ?? []); setError('') }
     setLoading(false)
   }
@@ -317,7 +361,7 @@ function FundModule({ label }: { label: string }) {
     setSaving(false)
   }
   const total = rows.reduce((sum, row) => sum + Number(row.amount), 0)
-  return <><div className="welcome-row"><div><div className="eyebrow">স্বপ্নতরী · তহবিল</div><h1>{label}</h1><p>আসল ledger-এ থাকা তহবিল বরাদ্দ ও লেনদেন</p></div><button className="primary-button" onClick={() => setFormOpen(true)}><Plus size={17} /> নতুন বরাদ্দ</button></div>{error && <div className="notice error-notice">{error}</div>}<article className="metric-card fund-total"><div className="metric-icon green"><HeartHandshake size={19} /></div><span className="metric-label">তালিকাভুক্ত মোট তহবিল বরাদ্দ</span><strong>{loading ? '…' : fmt(total)}</strong><span className="metric-foot">বাস্তব ledger তথ্য · সর্বশেষ ১০০টি এন্ট্রি</span></article><section className="panel records-panel fund-records"><div className="records-toolbar"><b>তহবিলের লেনদেন</b><button className="secondary-button" onClick={() => void load()}>রিফ্রেশ</button></div><div className="table-scroll"><table><thead><tr><th>লেনদেন নম্বর</th><th>খাত</th><th>বিবরণ</th><th>পরিমাণ</th><th>তারিখ</th></tr></thead><tbody>{rows.map((row) => <tr key={row.transaction_number}><td>{row.transaction_number}</td><td>খিদমতে খালক</td><td>{row.description}</td><td>{fmt(Number(row.amount))}</td><td>{prettyDate(row.transaction_date)}</td></tr>)}</tbody></table>{loading ? <div className="table-empty">তথ্য আসছে…</div> : !rows.length && <div className="table-empty">এখনো কোনো তহবিল বরাদ্দ নেই।</div>}</div></section>{formOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setFormOpen(false) }}><section className="entry-modal"><div className="modal-heading"><div><b>নতুন তহবিল বরাদ্দ</b><span>সংরক্ষণ করলে ledger-এ হিসাব তৈরি হবে</span></div><button className="close-modal" onClick={() => setFormOpen(false)} aria-label="বন্ধ"><X size={18} /></button></div><form className="entry-form" onSubmit={add}><div className="field-grid"><label>বরাদ্দের পরিমাণ<input name="amount" type="number" min="0.01" step="0.01" required /></label><label>তারিখ<input name="transaction_date" type="date" required defaultValue={new Date().toISOString().slice(0,10)} /></label><label>বিবরণ<input name="description" required /></label><label>রেফারেন্স নম্বর<input name="reference_number" /></label></div><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setFormOpen(false)}>বাতিল</button><button className="primary-button" disabled={saving}>{saving ? 'সংরক্ষণ হচ্ছে…' : 'বরাদ্দ সংরক্ষণ করুন'}</button></div></form></section></div>}</>
+  return <><div className="welcome-row"><div><div className="eyebrow">স্বপ্নতরী · তহবিল</div><h1>{label}</h1><p>আসল ledger-এ থাকা সব তহবিল বরাদ্দ ও লেনদেন</p></div><button className="primary-button" onClick={() => setFormOpen(true)}><Plus size={17} /> নতুন বরাদ্দ</button></div>{error && <div className="notice error-notice">{error}</div>}<article className="metric-card fund-total"><div className="metric-icon green"><HeartHandshake size={19} /></div><span className="metric-label">তালিকাভুক্ত মোট তহবিল বরাদ্দ</span><strong>{loading ? '…' : fmt(total)}</strong><span className="metric-foot">সব বাস্তব ledger রেকর্ডের যোগফল</span></article><section className="panel records-panel fund-records"><div className="records-toolbar"><b>তহবিলের লেনদেন</b><button className="secondary-button" onClick={() => void load()}>রিফ্রেশ</button></div><div className="table-scroll"><table><thead><tr><th>লেনদেন নম্বর</th><th>খাত</th><th>বিবরণ</th><th>পরিমাণ</th><th>তারিখ</th></tr></thead><tbody>{rows.map((row) => <tr key={row.transaction_number}><td>{row.transaction_number}</td><td>খিদমতে খালক</td><td>{row.description}</td><td>{fmt(Number(row.amount))}</td><td>{prettyDate(row.transaction_date)}</td></tr>)}</tbody></table>{loading ? <div className="table-empty">তথ্য আসছে…</div> : !rows.length && <div className="table-empty">এখনো কোনো তহবিল বরাদ্দ নেই।</div>}</div></section>{formOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setFormOpen(false) }}><section className="entry-modal"><div className="modal-heading"><div><b>নতুন তহবিল বরাদ্দ</b><span>সংরক্ষণ করলে ledger-এ হিসাব তৈরি হবে</span></div><button className="close-modal" onClick={() => setFormOpen(false)} aria-label="বন্ধ"><X size={18} /></button></div><form className="entry-form" onSubmit={add}><div className="field-grid"><label>বরাদ্দের পরিমাণ<input name="amount" type="number" min="0.01" step="0.01" required /></label><label>তারিখ<input name="transaction_date" type="date" required defaultValue={new Date().toISOString().slice(0,10)} /></label><label>বিবরণ<input name="description" required /></label><label>রেফারেন্স নম্বর<input name="reference_number" /></label></div><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setFormOpen(false)}>বাতিল</button><button className="primary-button" disabled={saving}>{saving ? 'সংরক্ষণ হচ্ছে…' : 'বরাদ্দ সংরক্ষণ করুন'}</button></div></form></section></div>}</>
 }
 
 function ReportModule({ label }: { label: string }) {
@@ -330,8 +374,8 @@ function ReportModule({ label }: { label: string }) {
   const load = async () => {
     if (!supabase || from > to) { setError('শুরুর তারিখ শেষ তারিখের আগের হতে হবে।'); return }
     setLoading(true); setError('')
-    const result = await supabase.from('financial_transactions').select('transaction_number,transaction_date,category,amount,transaction_type').gte('transaction_date', from).lte('transaction_date', to).order('transaction_date', { ascending: false }).limit(5000)
-    if (result.error) setError('রিপোর্টের তথ্য আনা যায়নি।')
+    const result = await fetchAllRows((start,end) => supabase!.from('financial_transactions').select('transaction_number,transaction_date,category,amount,transaction_type').gte('transaction_date', from).lte('transaction_date', to).order('transaction_date', { ascending: false }).range(start,end))
+    if (result.error) { setError('সম্পূর্ণ রিপোর্ট আনা যায়নি। অসম্পূর্ণ যোগফল দেখানো হচ্ছে না।'); setRows([]) }
     else setRows((result.data ?? []) as RecentTransaction[])
     setLoading(false)
   }
