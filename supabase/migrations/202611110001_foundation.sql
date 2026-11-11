@@ -249,6 +249,43 @@ create trigger audit_transactions after insert or update or delete on public.fin
 create trigger audit_investments after insert or update or delete on public.investments for each row execute procedure public.audit_row_change();
 create trigger audit_qard after insert or update or delete on public.qard_hasan_loans for each row execute procedure public.audit_row_change();
 
+-- Every confirmed collection posts to the cash ledger in the same database transaction.
+create or replace function public.record_collection_ledger()
+returns trigger language plpgsql security definer set search_path = '' as $$
+declare
+  saved public.financial_transactions;
+  label text;
+begin
+  label := case when TG_TABLE_NAME = 'monthly_savings' then 'Monthly Savings' else 'Annual Fees' end;
+  insert into public.financial_transactions(transaction_number, transaction_date, transaction_type, category, member_id, amount, description, reference_number, payment_method, created_by)
+  values ('SWT-COL-' || new.id::text, new.payment_date, 'income', label, new.member_id, new.amount, label || ' collection', new.receipt_number, new.payment_method, new.created_by)
+  returning * into saved;
+  insert into public.ledger_entries(transaction_id, account_code, debit) values (saved.id, 'CASH', saved.amount);
+  insert into public.ledger_entries(transaction_id, account_code, credit) values (saved.id, 'INCOME:' || saved.category, saved.amount);
+  return new;
+end;
+$$;
+create trigger monthly_savings_ledger after insert on public.monthly_savings for each row execute procedure public.record_collection_ledger();
+create trigger annual_fees_ledger after insert on public.annual_fees for each row execute procedure public.record_collection_ledger();
+
+create or replace function public.record_paid_share_ledger()
+returns trigger language plpgsql security definer set search_path = '' as $$
+declare saved public.financial_transactions;
+begin
+  if new.payment_status <> 'paid' then return new; end if;
+  if TG_OP = 'UPDATE' then
+    if old.payment_status = 'paid' then return new; end if;
+  end if;
+  insert into public.financial_transactions(transaction_number, transaction_date, transaction_type, category, member_id, amount, description, reference_number, created_by)
+  values ('SWT-SHR-' || new.id::text, new.issue_date, 'income', 'Share Capital', new.member_id, new.share_value, 'Paid share issued', new.share_number, new.created_by)
+  returning * into saved;
+  insert into public.ledger_entries(transaction_id, account_code, debit) values (saved.id, 'CASH', saved.amount);
+  insert into public.ledger_entries(transaction_id, account_code, credit) values (saved.id, 'EQUITY:Share Capital', saved.amount);
+  return new;
+end;
+$$;
+create trigger paid_share_ledger after insert or update of payment_status on public.share_registry for each row execute procedure public.record_paid_share_ledger();
+
 alter table public.profiles enable row level security;
 alter table public.members enable row level security;
 alter table public.institutional_settings enable row level security;
