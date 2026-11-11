@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Activity, ArrowDownLeft, ArrowUpRight, Bell, BookOpen, BriefcaseBusiness, ChartNoAxesCombined, ChevronDown, CircleHelp, Coins, Download, FileChartColumn, HandCoins, HeartHandshake, LayoutDashboard, LogOut, Menu, Plus, Settings, ShieldCheck, Users, WalletCards, X } from 'lucide-react'
+import { Activity, ArrowDownLeft, ArrowUpRight, Bell, BookOpen, BriefcaseBusiness, ChartNoAxesCombined, ChevronDown, CircleHelp, Download, FileChartColumn, HandCoins, HeartHandshake, LayoutDashboard, LogOut, Menu, Plus, Settings, ShieldCheck, Users, WalletCards, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { Session } from '@supabase/supabase-js'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
@@ -148,19 +148,18 @@ export default function App() {
     let alive = true
     const load = async () => {
       setLoading(true); setError('')
-      const [members, savings, fees, shares, tx, investments, loans, activity] = await Promise.all([
+      const [members, savings, fees, tx, investments, loans, activity] = await Promise.all([
         supabase!.from('members').select('id,status', { count: 'exact', head: true }),
         fetchAllRows((from,to) => supabase!.from('monthly_savings').select('amount,collection_month,collection_year').range(from,to)),
         fetchAllRows((from,to) => supabase!.from('annual_fees').select('amount,payment_date').range(from,to)),
-        fetchAllRows((from,to) => supabase!.from('share_registry').select('share_value').eq('ownership_status', 'active').range(from,to)),
         fetchAllRows((from,to) => supabase!.from('financial_transactions').select('amount,transaction_type').range(from,to)),
         fetchAllRows((from,to) => supabase!.from('investments').select('current_value').range(from,to)),
         fetchAllRows((from,to) => supabase!.from('qard_hasan_loans').select('outstanding_amount').range(from,to)),
         supabase!.from('financial_transactions').select('transaction_number,transaction_date,category,amount,transaction_type').order('transaction_date', { ascending: false }).limit(5),
       ])
-      const failed = [members, savings, fees, shares, tx, investments, loans, activity].find((r) => r.error)
+      const failed = [members, savings, fees, tx, investments, loans, activity].find((r) => r.error)
       if (alive && failed?.error) { setError('ডেটাবেস থেকে সব হিসাব আনা যায়নি। সংযোগ ঠিক হলে রিফ্রেশ করুন; অসম্পূর্ণ যোগফল দেখানো হচ্ছে না।'); setMetrics([]); setChart([]); setRecent([]); setLoading(false); return }
-      const sum = (rows: { amount?: number; share_value?: number; current_value?: number; outstanding_amount?: number }[] | null, key: 'amount' | 'share_value' | 'current_value' | 'outstanding_amount') => rows?.reduce((total, row) => total + Number(row[key] ?? 0), 0) ?? 0
+      const sum = (rows: { amount?: number; current_value?: number; outstanding_amount?: number }[] | null, key: 'amount' | 'current_value' | 'outstanding_amount') => rows?.reduce((total, row) => total + Number(row[key] ?? 0), 0) ?? 0
       const year = new Date().getFullYear()
       const points = Array.from({ length: 12 }, (_, index) => {
         const month = index + 1
@@ -173,7 +172,6 @@ export default function App() {
         { label: 'মোট সদস্য', count: members.count ?? 0, icon: Users, tone: 'green' },
         { label: 'মাসিক সঞ্চয়', amount: sum(savings.data, 'amount'), icon: WalletCards, tone: 'blue', currency: true },
         { label: 'বার্ষিক ফি', amount: sum(fees.data, 'amount'), icon: FileChartColumn, tone: 'gold', currency: true },
-        { label: 'শেয়ার মূলধন', amount: sum(shares.data, 'share_value'), icon: Coins, tone: 'purple', currency: true },
         { label: 'মোট আয়', amount: income, icon: ArrowDownLeft, tone: 'green', currency: true },
         { label: 'মোট ব্যয়', amount: expense, icon: ArrowUpRight, tone: 'rose', currency: true },
         { label: 'বিনিয়োগ মূল্য', amount: sum(investments.data, 'current_value'), icon: BriefcaseBusiness, tone: 'blue', currency: true },
@@ -276,7 +274,7 @@ function PasswordRecovery({ onSave, error, busy }: { onSave: (password: string) 
   return <div className="setup-screen"><form className="login-form recovery-form" onSubmit={submit}><div className="eyebrow">অ্যাকাউন্ট নিরাপত্তা</div><h2>নতুন পাসওয়ার্ড দিন</h2><p>Gmail লিংকটি যাচাই হয়েছে। এখন নিজের password সেট করুন।</p><label>নতুন পাসওয়ার্ড<input type="password" required minLength={8} autoComplete="new-password" value={password} onChange={(e)=>setPassword(e.target.value)} /></label><label>পাসওয়ার্ড আবার লিখুন<input type="password" required minLength={8} autoComplete="new-password" value={confirm} onChange={(e)=>setConfirm(e.target.value)} /></label>{password && confirm && password !== confirm && <div className="notice error-notice">দুটি পাসওয়ার্ড মিলছে না।</div>}{error && <div className="notice error-notice">{error}</div>}<button className="primary-button full-width" disabled={busy || saving || password !== confirm}>{saving ? 'সংরক্ষণ হচ্ছে…' : 'নতুন পাসওয়ার্ড সংরক্ষণ'}</button></form></div>
 }
 function MemberNotice() {
-  const [record, setRecord] = useState<{ name: string; memberId: string; savings: number; fees: number; shares: number; loan: number } | null>(null)
+  const [record, setRecord] = useState<{ name: string; memberId: string; savings: number; fees: number; loan: number } | null>(null)
   const [message, setMessage] = useState('')
   const [history, setHistory] = useState<{ savings: Record<string, unknown>[]; fees: Record<string, unknown>[]; shares: Record<string, unknown>[]; loans: Record<string, unknown>[] }>({ savings: [], fees: [], shares: [], loans: [] })
   useEffect(() => {
@@ -296,12 +294,12 @@ function MemberNotice() {
       const failed = [savings, fees, shares, loans].find((result) => result.error)
       if (failed?.error) { setMessage('আপনার முழு হিসাব আনা যায়নি। Internet সংযোগ ঠিক করে আবার খুলুন; অসম্পূর্ণ অঙ্ক দেখানো হচ্ছে না.'); return }
       setHistory({ savings: (savings.data ?? []) as Record<string, unknown>[], fees: (fees.data ?? []) as Record<string, unknown>[], shares: (shares.data ?? []) as Record<string, unknown>[], loans: (loans.data ?? []) as Record<string, unknown>[] })
-      setRecord({ name: member.full_name, memberId: member.member_id, savings: (savings.data ?? []).reduce((a, r) => a + Number(r.amount), 0), fees: (fees.data ?? []).reduce((a, r) => a + Number(r.amount), 0), shares: (shares.data ?? []).reduce((a, r) => a + Number(r.share_value), 0), loan: (loans.data ?? []).reduce((a, r) => a + Number(r.outstanding_amount), 0) })
+      setRecord({ name: member.full_name, memberId: member.member_id, savings: (savings.data ?? []).reduce((a, r) => a + Number(r.amount), 0), fees: (fees.data ?? []).reduce((a, r) => a + Number(r.amount), 0), loan: (loans.data ?? []).reduce((a, r) => a + Number(r.outstanding_amount), 0) })
     }
     void load()
     return () => { alive = false }
   }, [])
-  return <><div className="welcome-row"><div><div className="eyebrow">আসসালামু আলাইকুম</div><h1>{record?.name ?? 'আপনার ব্যক্তিগত হিসাব'}</h1><p>{record ? `সদস্য নম্বর ${record.memberId} · আপনার হিসাবের সারসংক্ষেপ` : 'আপনার ব্যক্তিগত আর্থিক তথ্য'}</p></div></div>{message && <div className="notice error-notice">{message}</div>}{record ? <><div className="metrics-grid member-metrics">{[{ label: 'মোট মাসিক সঞ্চয়', amount: record.savings, icon: WalletCards, tone: 'green' }, { label: 'বার্ষিক ফি', amount: record.fees, icon: FileChartColumn, tone: 'gold' }, { label: 'সক্রিয় শেয়ার মূল্য', amount: record.shares, icon: Coins, tone: 'purple' }, { label: 'করযে হাসানা বকেয়া', amount: record.loan, icon: HandCoins, tone: 'blue' }].map((item) => <article className="metric-card" key={item.label}><div className={`metric-icon ${item.tone}`}><item.icon size={19} /></div><span className="metric-label">{item.label}</span><strong>{fmt(item.amount)}</strong><span className="metric-foot">আপনার নিজস্ব হিসাব</span></article>)}</div><div className="member-history-grid"><MemberHistory title="মাসিক সঞ্চয়ের ইতিহাস" rows={history.savings} columns={[{ key: 'receipt_number', label: 'রসিদ' }, { key: 'collection_month', label: 'মাস' }, { key: 'collection_year', label: 'বছর' }, { key: 'amount', label: 'পরিমাণ' }, { key: 'payment_date', label: 'তারিখ' }]} /><MemberHistory title="বার্ষিক ফি" rows={history.fees} columns={[{ key: 'financial_year', label: 'অর্থবছর' }, { key: 'amount', label: 'পরিমাণ' }, { key: 'payment_date', label: 'তারিখ' }]} /><MemberHistory title="শেয়ার" rows={history.shares} columns={[{ key: 'share_number', label: 'শেয়ার নম্বর' }, { key: 'share_value', label: 'মূল্য' }, { key: 'payment_status', label: 'পরিশোধ' }, { key: 'issue_date', label: 'ইস্যুর তারিখ' }]} /><MemberHistory title="করযে হাসানা" rows={history.loans} columns={[{ key: 'principal_amount', label: 'মূল ঋণ' }, { key: 'outstanding_amount', label: 'বকেয়া' }, { key: 'disbursement_date', label: 'প্রদানের তারিখ' }, { key: 'status', label: 'অবস্থা' }]} /></div></> : !message && <div className="member-card"><div className="metric-icon green"><ShieldCheck size={20} /></div><div><h2>আপনার ব্যক্তিগত হিসাব</h2><p>আপনার তথ্য যাচাই হচ্ছে…</p></div></div>}</>
+  return <><div className="welcome-row"><div><div className="eyebrow">আসসালামু আলাইকুম</div><h1>{record?.name ?? 'আপনার ব্যক্তিগত হিসাব'}</h1><p>{record ? `সদস্য নম্বর ${record.memberId} · আপনার হিসাবের সারসংক্ষেপ` : 'আপনার ব্যক্তিগত আর্থিক তথ্য'}</p></div></div>{message && <div className="notice error-notice">{message}</div>}{record ? <><div className="metrics-grid member-metrics">{[{ label: 'মোট মাসিক সঞ্চয়', amount: record.savings, icon: WalletCards, tone: 'green' }, { label: 'বার্ষিক ফি', amount: record.fees, icon: FileChartColumn, tone: 'gold' }, { label: 'করযে হাসানা বকেয়া', amount: record.loan, icon: HandCoins, tone: 'blue' }].map((item) => <article className="metric-card" key={item.label}><div className={`metric-icon ${item.tone}`}><item.icon size={19} /></div><span className="metric-label">{item.label}</span><strong>{fmt(item.amount)}</strong><span className="metric-foot">আপনার নিজস্ব হিসাব</span></article>)}</div><div className="member-history-grid"><MemberHistory title="মাসিক সঞ্চয়ের ইতিহাস" rows={history.savings} columns={[{ key: 'receipt_number', label: 'রসিদ' }, { key: 'collection_month', label: 'মাস' }, { key: 'collection_year', label: 'বছর' }, { key: 'amount', label: 'পরিমাণ' }, { key: 'payment_date', label: 'তারিখ' }]} /><MemberHistory title="বার্ষিক ফি" rows={history.fees} columns={[{ key: 'financial_year', label: 'অর্থবছর' }, { key: 'amount', label: 'পরিমাণ' }, { key: 'payment_date', label: 'তারিখ' }]} /><MemberHistory title="শেয়ার" rows={history.shares} columns={[{ key: 'share_number', label: 'শেয়ার নম্বর' }, { key: 'share_value', label: 'মূল্য' }, { key: 'payment_status', label: 'পরিশোধ' }, { key: 'issue_date', label: 'ইস্যুর তারিখ' }]} /><MemberHistory title="করযে হাসানা" rows={history.loans} columns={[{ key: 'principal_amount', label: 'মূল ঋণ' }, { key: 'outstanding_amount', label: 'বকেয়া' }, { key: 'disbursement_date', label: 'প্রদানের তারিখ' }, { key: 'status', label: 'অবস্থা' }]} /></div></> : !message && <div className="member-card"><div className="metric-icon green"><ShieldCheck size={20} /></div><div><h2>আপনার ব্যক্তিগত হিসাব</h2><p>আপনার তথ্য যাচাই হচ্ছে…</p></div></div>}</>
 }
 function MemberHistory({ title, rows, columns }: { title: string; rows: Record<string, unknown>[]; columns: { key: string; label: string }[] }) {
   const [pageIndex, setPageIndex] = useState(0)
