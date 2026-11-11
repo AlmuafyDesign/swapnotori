@@ -182,7 +182,7 @@ export default function App() {
             <div className="lower-grid"><section className="panel chart-panel"><div className="panel-head"><div><h2>সংগ্রহের চিত্র</h2><p>চলতি বছরে মাসভিত্তিক সঞ্চয় ও ফি</p></div><span className="small-select">{new Intl.NumberFormat('bn-BD').format(new Date().getFullYear())}</span></div>{chart.some((point) => point.savings || point.fees) ? <div className="chart-wrap"><ResponsiveContainer width="100%" height="100%"><BarChart data={chart} margin={{ top: 12, right: 8, left: -22, bottom: 0 }}><CartesianGrid stroke="#edf1ee" vertical={false} /><XAxis dataKey="name" tick={{ fontSize: 10, fill: '#89978f' }} axisLine={false} tickLine={false} /><YAxis tick={{ fontSize: 9, fill: '#99a49e' }} axisLine={false} tickLine={false} tickFormatter={(n: number) => n > 999 ? `${Math.round(n / 1000)}k` : `${n}`} /><Tooltip formatter={(v) => fmt(Number(v))} contentStyle={{ fontFamily: 'inherit', borderColor: '#e7eee9', borderRadius: 8, fontSize: 11 }} /><Bar dataKey="savings" name="মাসিক সঞ্চয়" fill="#23816b" radius={[4,4,0,0]} maxBarSize={19} /><Bar dataKey="fees" name="বার্ষিক ফি" fill="#d7b46a" radius={[4,4,0,0]} maxBarSize={19} /></BarChart></ResponsiveContainer></div> : <div className="empty-chart"><div className="chart-mark"><ChartNoAxesCombined size={25} /></div><b>{loading ? 'হিসাব লোড হচ্ছে…' : 'এখনো কোনো সংগ্রহের তথ্য নেই'}</b><span>বাস্তব সংগ্রহের তথ্য যোগ হলে এখানে চিত্র দেখা যাবে।</span></div>}</section>
               <section className="panel activity-panel"><div className="panel-head"><div><h2>সাম্প্রতিক কার্যক্রম</h2><p>সর্বশেষ আর্থিক লেনদেন</p></div><button className="link-button" onClick={() => setPage('financial_transactions')}>সব দেখুন</button></div>{recent.length ? <div className="recent-list">{recent.map((item) => <div className="recent-row" key={item.transaction_number}><div className={`recent-icon ${item.transaction_type === 'income' ? 'income' : 'expense'}`}>{item.transaction_type === 'income' ? <ArrowDownLeft size={15} /> : <ArrowUpRight size={15} />}</div><div className="recent-label"><b>{item.category}</b><span>{prettyDate(item.transaction_date)}</span></div><strong className={item.transaction_type === 'income' ? 'positive' : 'negative'}>{item.transaction_type === 'income' ? '+' : '−'}{fmt(Number(item.amount))}</strong></div>)}</div> : <div className="empty-activity"><Activity size={20} /><span>{loading ? 'লোড হচ্ছে…' : 'এখনো কোনো কার্যক্রম নেই'}</span></div>}</section></div>
             <div className="integrity-note"><ShieldCheck size={18} /><span><b>হিসাবের নির্ভরযোগ্যতা</b> — এখানে কোনো নমুনা বা কল্পিত আর্থিক তথ্য দেখানো হয় না। নতুন তথ্য ডেটাবেসে যোগ হলে সারসংক্ষেপ আপডেট হবে।</span></div>
-          </> : <MemberNotice />}</> : <ModulePage page={page} label={selected?.label ?? ''} role={role} />}
+          </> : <MemberNotice />}</> : <ModulePage page={page} label={selected?.label ?? ''} role={role} userId={session.user.id} email={session.user.email ?? ''} />}
         <footer>© ২০২৬ স্বপ্নতরী <span>আজকের সঞ্চয়, আগামী দিনের পুঁজি।</span><span className="help-label"><CircleHelp size={16} /> সহায়তা</span></footer>
       </section>
     </main>
@@ -227,7 +227,7 @@ function MemberHistory({ title, rows, columns }: { title: string; rows: Record<s
 }
 type FormField = { key: string; label: string; type?: string; required?: boolean; options?: { value: string; label: string }[] }
 const membersField: FormField = { key: 'member_id', label: 'সদস্য', type: 'select', required: true }
-function ModulePage({ page, label, role }: { page: string; label: string; role: string }) {
+function ModulePage({ page, label, role, userId, email }: { page: string; label: string; role: string; userId: string; email: string }) {
   const [rows, setRows] = useState<Record<string, unknown>[]>([])
   const [members, setMembers] = useState<{ id: string; member_id: string; full_name: string }[]>([])
   const [loading, setLoading] = useState(true)
@@ -343,6 +343,7 @@ function ModulePage({ page, label, role }: { page: string; label: string; role: 
     if (page === 'funds') return <FundModule label={label} />
   if (page === 'reports') return <ReportModule label={label} />
   if (page === 'constitution') return <ConstitutionPage />
+  if (page === 'settings') return <SettingsModule userId={userId} email={email} />
   if (!tablePages.includes(page as TableKey)) return <><div className="welcome-row"><div><div className="eyebrow">স্বপ্নতরী · ব্যবস্থাপনা</div><h1>{label}</h1><p>এই মডিউলটি প্রস্তুত করা বাকি।</p></div></div><section className="panel module-panel"><div className="module-empty"><div className="chart-mark"><LayoutDashboard size={23} /></div><h2>এই অংশটি এখনো প্রস্তুত নয়</h2><p>এখানে কোনো নমুনা হিসাব দেখানো হচ্ছে না। বাস্তব ডেটা ও নিরাপদ কার্যপ্রবাহ যুক্ত না হওয়া পর্যন্ত এই মডিউলটি বন্ধ আছে।</p></div></section></>
   return <><div className="welcome-row"><div><div className="eyebrow">স্বপ্নতরী · ব্যবস্থাপনা</div><h1>{label}</h1><p>ডেটাবেসে থাকা সব রেকর্ড · মোট {new Intl.NumberFormat('bn-BD').format(totalRows)}টি</p></div>{currentFields && role === 'super_admin' && <button className="primary-button" onClick={() => { setEditing(null); setFormOpen(true) }}><Plus size={17} /> নতুন যোগ করুন</button>}</div>
     {error && <div className="notice error-notice">{error}</div>}
@@ -439,5 +440,73 @@ function ConstitutionPage() {
     <section className="constitution-section"><div className="constitution-section-head"><span className="constitution-section-mark">০১</span><div><div className="eyebrow">প্রতিষ্ঠানের নীতিমালা</div><h2>দস্তুর ও গঠনতন্ত্র</h2><p>প্রতিষ্ঠানের পরিচালনা, সদস্যপদ ও দায়িত্বের মূলনীতি</p></div></div><div className="constitution-articles">{constitutionArticles.map(([title, text], index) => <article className="constitution-article" key={title}><div className="article-number">{new Intl.NumberFormat('bn-BD', { minimumIntegerDigits: 2 }).format(index + 1)}</div><div><h3>{title}</h3><p>{text}</p></div></article>)}</div></section>
     <section className="qard-section"><div className="constitution-section-head"><span className="qard-section-mark"><HandCoins size={21} /></span><div><div className="eyebrow">সদস্য সহায়তা</div><h2>কর্জে হাসানা সংক্রান্ত নীতিমালা</h2><p>আবেদন, অনুমোদন ও পরিশোধের নিয়ম</p></div></div><div className="qard-limit-cards"><article><span>সর্বোচ্চ ঋণ</span><strong>৳১৫,০০০</strong></article><article><span>সর্বোচ্চ মেয়াদ</span><strong>২ মাস</strong></article><article><span>আবেদন ফি</span><strong>৳১০০</strong></article></div><ol className="qard-policy-list">{qardPolicies.map((policy, index) => <li key={policy}><span>{new Intl.NumberFormat('bn-BD').format(index + 1)}</span><p>{policy}</p></li>)}</ol></section>
     <footer className="constitution-footer"><ShieldCheck size={18} /><span>স্বপ্নতরী · লক্ষ্য সুদূরপ্রসারী</span><i>সংবিধান ও দস্তুর</i></footer>
+  </div>
+}
+
+type OrganizationProfile = { name: string; motto: string; email: string; phone: string; whatsapp: string; address: string }
+const blankOrganization: OrganizationProfile = { name: 'স্বপ্নতরী', motto: 'লক্ষ্য সুদূরপ্রসারী', email: '', phone: '', whatsapp: '', address: '' }
+function SettingsModule({ userId, email }: { userId: string; email: string }) {
+  const [profile, setProfile] = useState<OrganizationProfile>(blankOrganization)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [counts, setCounts] = useState<{ members: number; active: number; linked: number; savings: number; fees: number; shares: number; transactions: number; loans: number } | null>(null)
+  useEffect(() => {
+    let alive = true
+    const load = async () => {
+      if (!supabase) return
+      setLoading(true); setError('')
+      const [profileResult, members, memberCount, savings, fees, shares, transactions, loans] = await Promise.all([
+        supabase.from('institutional_settings').select('value').eq('key', 'organization_profile').maybeSingle(),
+        fetchAllRows((from, to) => supabase!.from('members').select('id,status,auth_user_id').range(from, to)),
+        supabase.from('members').select('id', { count: 'exact', head: true }),
+        supabase.from('monthly_savings').select('id', { count: 'exact', head: true }),
+        supabase.from('annual_fees').select('id', { count: 'exact', head: true }),
+        supabase.from('share_registry').select('id', { count: 'exact', head: true }),
+        supabase.from('financial_transactions').select('id', { count: 'exact', head: true }),
+        supabase.from('qard_hasan_loans').select('id', { count: 'exact', head: true }),
+      ])
+      if (!alive) return
+      if (profileResult.error) setError('প্রতিষ্ঠানের সেটিংস লোড হয়নি। আবার চেষ্টা করুন।')
+      else setProfile({ ...blankOrganization, ...(profileResult.data?.value as Partial<OrganizationProfile> | null ?? {}) })
+      if (members.error || memberCount.error || savings.error || fees.error || shares.error || transactions.error || loans.error) setError((current) => current || 'কিছু ডেটাবেসের মোট সংখ্যা দেখা যায়নি। সংযোগ যাচাই করে রিফ্রেশ করুন।')
+      else {
+        const memberRows = members.data ?? []
+        setCounts({ members: memberCount.count ?? 0, active: memberRows.filter((row) => row.status === 'active').length, linked: memberRows.filter((row) => row.auth_user_id).length, savings: savings.count ?? 0, fees: fees.count ?? 0, shares: shares.count ?? 0, transactions: transactions.count ?? 0, loans: loans.count ?? 0 })
+      }
+      setLoading(false)
+    }
+    void load()
+    return () => { alive = false }
+  }, [])
+  const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!supabase) return
+    setSaving(true); setMessage(''); setError('')
+    const result = await supabase.from('institutional_settings').upsert({ key: 'organization_profile', value: profile, updated_by: userId, effective_from: new Date().toISOString().slice(0, 10), updated_at: new Date().toISOString() }, { onConflict: 'key' })
+    if (result.error) setError('সেটিংস সংরক্ষণ হয়নি। আবার চেষ্টা করুন।')
+    else setMessage('প্রতিষ্ঠানের পরিচিতি সংরক্ষণ হয়েছে।')
+    setSaving(false)
+  }
+  const changePassword = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!supabase) return
+    if (newPassword.length < 8) { setError('নতুন পাসওয়ার্ড অন্তত ৮ অক্ষরের হতে হবে।'); return }
+    if (newPassword !== confirmPassword) { setError('দুটি পাসওয়ার্ড মিলছে না।'); return }
+    setSaving(true); setMessage(''); setError('')
+    const result = await supabase.auth.updateUser({ password: newPassword })
+    if (result.error) setError('পাসওয়ার্ড বদলানো যায়নি। আবার চেষ্টা করুন।')
+    else { setMessage('অ্যাকাউন্টের পাসওয়ার্ড বদলানো হয়েছে।'); setNewPassword(''); setConfirmPassword('') }
+    setSaving(false)
+  }
+  const number = (value: number) => new Intl.NumberFormat('bn-BD').format(value)
+  return <div className="settings-page"><div className="welcome-row"><div><div className="eyebrow">স্বপ্নতরী · প্রশাসন</div><h1>সেটিংস</h1><p>প্রতিষ্ঠানের পরিচিতি, অ্যাকাউন্ট নিরাপত্তা ও ডেটাবেসের অবস্থা</p></div><button className="secondary-button" onClick={() => window.location.reload()}>রিফ্রেশ</button></div>
+    {error && <div className="notice error-notice">{error}</div>}{message && <div className="notice success-notice">{message}</div>}
+    <section className="settings-card"><div className="settings-card-head"><div className="settings-icon settings-brand-icon"><BookOpen size={20} /></div><div><h2>প্রতিষ্ঠানের পরিচিতি</h2><p>এই তথ্য Supabase-এ সংরক্ষিত থাকবে</p></div></div><form className="settings-form" onSubmit={saveProfile}><label>প্রতিষ্ঠানের নাম<input required value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} /></label><label>মূলমন্ত্র / পরিচিতি<input value={profile.motto} onChange={(e) => setProfile({ ...profile, motto: e.target.value })} /></label><label>প্রাতিষ্ঠানিক ইমেইল<input type="email" value={profile.email} onChange={(e) => setProfile({ ...profile, email: e.target.value })} placeholder="প্রতিষ্ঠানের যোগাযোগ ইমেইল" /></label><label>যোগাযোগ নম্বর<input type="tel" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} /></label><label>হোয়াটসঅ্যাপ নম্বর<input type="tel" value={profile.whatsapp} onChange={(e) => setProfile({ ...profile, whatsapp: e.target.value })} /></label><label className="settings-wide">প্রতিষ্ঠানের ঠিকানা<textarea rows={2} value={profile.address} onChange={(e) => setProfile({ ...profile, address: e.target.value })} /></label><div className="settings-actions"><span>{loading ? 'লোড হচ্ছে…' : 'পরিবর্তনগুলো সংরক্ষণ করুন'}</span><button className="primary-button" disabled={saving || loading}>{saving ? 'সংরক্ষণ হচ্ছে…' : 'পরিচিতি সংরক্ষণ'}</button></div></form></section>
+    <section className="settings-card"><div className="settings-card-head"><div className="settings-icon settings-security-icon"><ShieldCheck size={20} /></div><div><h2>অ্যাকাউন্ট নিরাপত্তা</h2><p>সুপার অ্যাডমিন লগইন সুরক্ষিত রাখুন</p></div></div><div className="settings-account"><span>বর্তমান লগইন ইমেইল</span><strong>{email}</strong></div><form className="settings-form settings-password-form" onSubmit={changePassword}><label>নতুন পাসওয়ার্ড<input type="password" required minLength={8} autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="অন্তত ৮ অক্ষর" /></label><label>পাসওয়ার্ড আবার লিখুন<input type="password" required minLength={8} autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="একই পাসওয়ার্ড লিখুন" /></label><div className="settings-actions settings-wide"><span>পাসওয়ার্ড শুধু আপনার Supabase অ্যাকাউন্টে বদলাবে</span><button className="secondary-button" disabled={saving}>{saving ? 'অপেক্ষা করুন…' : 'পাসওয়ার্ড পরিবর্তন'}</button></div></form></section>
+    <section className="settings-card"><div className="settings-card-head"><div className="settings-icon settings-data-icon"><LayoutDashboard size={20} /></div><div><h2>ডেটাবেস ও কার্যক্রম</h2><p>Supabase-এ সংরক্ষিত বাস্তব রেকর্ডের মোট সংখ্যা</p></div></div><div className="settings-stat-grid">{[{label:'মোট সদস্য',value:counts?.members},{label:'সক্রিয় সদস্য',value:counts?.active},{label:'লগইন যুক্ত সদস্য',value:counts?.linked},{label:'মাসিক সঞ্চয়',value:counts?.savings},{label:'বার্ষিক ফি',value:counts?.fees},{label:'শেয়ার রেকর্ড',value:counts?.shares},{label:'আয়–ব্যয় লেনদেন',value:counts?.transactions},{label:'কর্জে হাসানা রেকর্ড',value:counts?.loans}].map((item) => <article key={item.label}><span>{item.label}</span><strong>{loading || item.value === undefined ? '…' : number(item.value)}</strong></article>)}</div><div className="settings-info-strip"><ShieldCheck size={17} /><span>সময় অঞ্চল: বাংলাদেশ (ঢাকা) · মুদ্রা: বাংলাদেশি টাকা (৳) · সদস্যের আর্থিক তথ্য ডেটাবেস নীতির মাধ্যমে সুরক্ষিত</span></div></section>
   </div>
 }
