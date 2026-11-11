@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Activity, ArrowDownLeft, ArrowUpRight, Bell, BookOpen, BriefcaseBusiness, ChartNoAxesCombined, ChevronDown, CircleHelp, Coins, FileChartColumn, HandCoins, HeartHandshake, LayoutDashboard, LogOut, Menu, Plus, Settings, ShieldCheck, Users, WalletCards, X } from 'lucide-react'
+import { Activity, ArrowDownLeft, ArrowUpRight, Bell, BookOpen, BriefcaseBusiness, ChartNoAxesCombined, ChevronDown, CircleHelp, Coins, Download, FileChartColumn, HandCoins, HeartHandshake, LayoutDashboard, LogOut, Menu, Plus, Settings, ShieldCheck, Users, WalletCards, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { Session } from '@supabase/supabase-js'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
@@ -23,6 +23,7 @@ const navigation: { label: string; icon: LucideIcon; section?: string; page: Tab
   { label: 'সেটিংস', icon: Settings, page: 'settings' },
 ]
 const fmt = (value: number) => `৳${new Intl.NumberFormat('bn-BD', { maximumFractionDigits: 0 }).format(value)}`
+const logoUrl = `${import.meta.env.BASE_URL}icon.jpg`
 const dateBn = new Intl.DateTimeFormat('bn-BD', { dateStyle: 'long', timeZone: 'Asia/Dhaka' }).format(new Date())
 const monthName = (n: number) => new Intl.DateTimeFormat('bn-BD', { month: 'short', timeZone: 'Asia/Dhaka' }).format(new Date(2026, n - 1, 1))
 const prettyDate = (date: string) => new Intl.DateTimeFormat('bn-BD', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Dhaka' }).format(new Date(`${date.slice(0, 10)}T00:00:00+06:00`))
@@ -53,6 +54,8 @@ export default function App() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
+  const [installPrompt, setInstallPrompt] = useState<Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> } | null>(null)
+  const [installed, setInstalled] = useState(false)
 
   useEffect(() => {
     if (!supabase) return
@@ -60,6 +63,17 @@ export default function App() {
     const { data } = supabase.auth.onAuthStateChange((_event, next) => setSession(next))
     return () => data.subscription.unsubscribe()
   }, [])
+
+  useEffect(() => {
+    const onPrompt = (event: Event) => { event.preventDefault(); setInstallPrompt(event as Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> }) }
+    const onInstalled = () => { setInstalled(true); setInstallPrompt(null) }
+    window.addEventListener('beforeinstallprompt', onPrompt)
+    window.addEventListener('appinstalled', onInstalled)
+    if ('serviceWorker' in navigator) void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, { scope: import.meta.env.BASE_URL }).catch(() => undefined)
+    return () => { window.removeEventListener('beforeinstallprompt', onPrompt); window.removeEventListener('appinstalled', onInstalled) }
+  }, [])
+
+  const installApp = async () => { if (!installPrompt) return; await installPrompt.prompt(); const choice = await installPrompt.userChoice; if (choice.outcome === 'accepted') setInstalled(true); setInstallPrompt(null) }
 
   useEffect(() => {
     if (!session || !supabase) { setRole(null); return }
@@ -121,14 +135,14 @@ export default function App() {
   }
 
   if (!supabaseConfigured) return <SetupNotice />
-  if (!session) return <Login email={email} password={password} busy={busy} error={error} onEmail={setEmail} onPassword={setPassword} onSubmit={signIn} />
-  if (!role) return <div className="center-message"><img src="/icon.jpg" alt="স্বপ্নতরী" /><p>{error || 'আপনার অ্যাকাউন্ট যাচাই হচ্ছে…'}</p><button className="text-button" onClick={() => void supabase?.auth.signOut()}>লগআউট</button></div>
+  if (!session) return <Login email={email} password={password} busy={busy} error={error} onEmail={setEmail} onPassword={setPassword} onSubmit={signIn} logo={logoUrl} installPrompt={installPrompt ? installApp : undefined} installed={installed} />
+  if (!role) return <div className="center-message"><img src={logoUrl} alt="স্বপ্নতরী" /><p>{error || 'আপনার অ্যাকাউন্ট যাচাই হচ্ছে…'}</p><button className="text-button" onClick={() => void supabase?.auth.signOut()}>লগআউট</button></div>
 
   const selected = navigation.find((item) => item.page === page)
   const metricsToShow = role === 'super_admin' ? metrics : []
   return <div className="app-shell">
     <aside className={`sidebar ${menuOpen ? 'sidebar-open' : ''}`}>
-      <div className="brand"><img src="/icon.jpg" alt="স্বপ্নতরী লোগো" /><div><strong>স্বপ্নতরী</strong><span>লক্ষ্য সুদূরপ্রসারী</span></div><button className="close-menu" onClick={() => setMenuOpen(false)} aria-label="মেনু বন্ধ"><X size={19} /></button></div>
+      <div className="brand"><img src={logoUrl} alt="স্বপ্নতরী লোগো" /><div><strong>স্বপ্নতরী</strong><span>লক্ষ্য সুদূরপ্রসারী</span></div><button className="close-menu" onClick={() => setMenuOpen(false)} aria-label="মেনু বন্ধ"><X size={19} /></button></div>
       <div className="workspace-label">প্রধান মেনু</div>
       <nav>{navigation.filter((item) => role === 'super_admin' || ['dashboard'].includes(item.page)).map((item) => <div key={item.page}>{item.section && <div className="workspace-label nav-section">{item.section}</div>}<button className={`nav-item ${page === item.page ? 'active' : ''}`} onClick={() => { setPage(item.page); setMenuOpen(false) }}><item.icon size={18} strokeWidth={1.8} /><span>{item.label}</span>{page === item.page && <span className="active-dot" />}</button></div>)}</nav>
       <div className="sidebar-bottom"><div className="trust-card"><div className="trust-icon"><ShieldCheck size={17} /></div><div><b>নিরাপদ ও সুরক্ষিত</b><span>আপনার তথ্য সুরক্ষিত আছে</span></div></div><button className="nav-item" onClick={() => void supabase?.auth.signOut()}><LogOut size={18} /><span>লগআউট</span></button><small>স্বপ্নতরী · ২০২৬</small></div>
@@ -137,6 +151,7 @@ export default function App() {
     <main className="main-content">
       <header className="topbar"><button className="mobile-menu" onClick={() => setMenuOpen(true)} aria-label="মেনু খুলুন"><Menu size={21} /></button><div className="breadcrumb"><span>স্বপ্নতরী</span><b>/</b><strong>{selected?.label ?? 'ড্যাশবোর্ড'}</strong></div><div className="top-actions"><span className="top-date">{dateBn}</span><span className="icon-button" aria-label="নোটিশ"><Bell size={18} /></span><span className="avatar">{session.user.email?.slice(0, 1).toUpperCase() ?? 'স'}</span><div className="user-meta"><b>{session.user.email}</b><span>{role === 'super_admin' ? 'সুপার অ্যাডমিন' : 'সদস্য'}</span></div><ChevronDown size={15} className="muted-icon" /></div></header>
       <section className="page-body">
+        {installPrompt && <div className="install-banner"><div><b>ফোনে স্বপ্নতরী ইনস্টল করুন</b><span>হোম স্ক্রিনে অ্যাপ আইকনসহ ব্যবহার করুন</span></div><button className="secondary-button" onClick={() => void installApp()}><Download size={16} /> ইনস্টল</button></div>}
         {page === 'dashboard' ? <><div className="welcome-row"><div><div className="eyebrow">আসসালামু আলাইকুম</div><h1>{role === 'super_admin' ? 'প্রতিষ্ঠানের সারসংক্ষেপ' : 'আপনার ব্যক্তিগত হিসাব'}</h1><p>স্বপ্নতরীর আর্থিক কার্যক্রমের এক নজরে চিত্র।</p></div>{role === 'super_admin' && <button className="primary-button" onClick={() => setPage('members')}><Plus size={17} /> নতুন সদস্য</button>}</div>
           {error && <div className="notice error-notice">{error}</div>}
           {role === 'super_admin' ? <><div className="section-heading"><div><h2>আর্থিক সারসংক্ষেপ</h2><p>Supabase ডেটাবেসের বর্তমান হিসাব</p></div><span className="period-button">সব সময়</span></div><div className="metrics-grid">{metricsToShow.map((metric) => <article className="metric-card" key={metric.label}><div className={`metric-icon ${metric.tone}`}><metric.icon size={19} /></div><span className="metric-label">{metric.label}</span><strong>{loading ? '…' : metric.currency ? fmt(metric.amount ?? 0) : new Intl.NumberFormat('bn-BD').format(metric.count ?? 0)}</strong><span className="metric-foot">বাস্তব ডেটাবেস হিসাব</span></article>)}</div>
@@ -150,8 +165,8 @@ export default function App() {
   </div>
 }
 
-function SetupNotice() { return <div className="setup-screen"><div className="setup-card"><img src="/icon.jpg" alt="স্বপ্নতরী" /><div className="eyebrow">প্রকল্প প্রস্তুত</div><h1>স্বপ্নতরী</h1><p>Supabase সংযোগ স্থাপন না হওয়া পর্যন্ত নিরাপদ লগইন ও বাস্তব হিসাব চালু হবে না।</p><div className="setup-step"><b>১.</b><span>Supabase Project Settings থেকে Project URL ও publishable anon key নিন।</span></div><div className="setup-step"><b>২.</b><span>প্রকল্পের মূল ফোল্ডারে <code>.env</code> ফাইলে মান দুটি বসান।</span></div><div className="setup-step"><b>৩.</b><span><code>supabase/migrations</code>-এর SQL Supabase SQL Editor-এ চালান।</span></div><div className="setup-warning"><ShieldCheck size={17} /> service role key কখনো frontend বা GitHub-এ রাখবেন না।</div></div></div> }
-function Login({ email, password, busy, error, onEmail, onPassword, onSubmit }: { email: string; password: string; busy: boolean; error: string; onEmail: (v: string) => void; onPassword: (v: string) => void; onSubmit: (e: FormEvent) => void }) { return <div className="login-screen"><div className="login-aside"><div className="login-brand"><img src="/icon.jpg" alt="" /><span>স্বপ্নতরী</span></div><div className="login-quote"><span>লক্ষ্য সুদূরপ্রসারী</span><h1>আজকের সঞ্চয়,<br />আগামী দিনের পুঁজি।</h1><p>একসাথে গড়ি একটি সুশৃঙ্খল ও সমৃদ্ধ আগামী।</p></div><small>স্বপ্নতরী · শেয়ারভিত্তিক প্রতিষ্ঠান</small></div><div className="login-form-wrap"><form className="login-form" onSubmit={onSubmit}><div className="eyebrow">আপনার অ্যাকাউন্টে প্রবেশ করুন</div><h2>স্বাগতম</h2><p>আপনার নিবন্ধিত তথ্য দিয়ে লগইন করুন।</p><label>ইমেইল ঠিকানা<input type="email" required autoComplete="username" value={email} onChange={(e) => onEmail(e.target.value)} placeholder="name@example.com" /></label><label>পাসওয়ার্ড<input type="password" required autoComplete="current-password" value={password} onChange={(e) => onPassword(e.target.value)} placeholder="আপনার পাসওয়ার্ড" /></label>{error && <div className="notice error-notice">{error}</div>}<button className="primary-button full-width" disabled={busy}>{busy ? 'লগইন হচ্ছে…' : 'নিরাপদে লগইন করুন'}</button><span className="login-security"><ShieldCheck size={16} /> আপনার তথ্য এনক্রিপ্ট করে সুরক্ষিত রাখা হয়</span></form></div></div> }
+function SetupNotice() { return <div className="setup-screen"><div className="setup-card"><img src={logoUrl} alt="স্বপ্নতরী" /><div className="eyebrow">প্রকল্প প্রস্তুত</div><h1>স্বপ্নতরী</h1><p>Supabase সংযোগ স্থাপন না হওয়া পর্যন্ত নিরাপদ লগইন ও বাস্তব হিসাব চালু হবে না।</p><div className="setup-step"><b>১.</b><span>Supabase Project Settings থেকে Project URL ও publishable anon key নিন।</span></div><div className="setup-step"><b>২.</b><span>প্রকল্পের মূল ফোল্ডারে <code>.env</code> ফাইলে মান দুটি বসান।</span></div><div className="setup-step"><b>৩.</b><span><code>supabase/migrations</code>-এর SQL Supabase SQL Editor-এ চালান।</span></div><div className="setup-warning"><ShieldCheck size={17} /> service role key কখনো frontend বা GitHub-এ রাখবেন না।</div></div></div> }
+function Login({ email, password, busy, error, onEmail, onPassword, onSubmit, logo, installPrompt, installed }: { email: string; password: string; busy: boolean; error: string; onEmail: (v: string) => void; onPassword: (v: string) => void; onSubmit: (e: FormEvent) => void; logo: string; installPrompt?: () => void; installed: boolean }) { return <div className="login-screen"><div className="login-aside"><div className="login-brand"><img src={logo} alt="" /><span>স্বপ্নতরী</span></div><div className="login-quote"><span>লক্ষ্য সুদূরপ্রসারী</span><h1>আজকের সঞ্চয়,<br />আগামী দিনের পুঁজি।</h1><p>একসাথে গড়ি একটি সুশৃঙ্খল ও সমৃদ্ধ আগামী।</p></div><small>স্বপ্নতরী · শেয়ারভিত্তিক প্রতিষ্ঠান</small></div><div className="login-form-wrap"><form className="login-form" onSubmit={onSubmit}><div className="eyebrow">আপনার অ্যাকাউন্টে প্রবেশ করুন</div><h2>স্বাগতম</h2><p>আপনার নিবন্ধিত তথ্য দিয়ে লগইন করুন।</p><label>ইমেইল ঠিকানা<input type="email" required autoComplete="username" value={email} onChange={(e) => onEmail(e.target.value)} placeholder="name@example.com" /></label><label>পাসওয়ার্ড<input type="password" required autoComplete="current-password" value={password} onChange={(e) => onPassword(e.target.value)} placeholder="আপনার পাসওয়ার্ড" /></label>{error && <div className="notice error-notice">{error}</div>}<button className="primary-button full-width" disabled={busy}>{busy ? 'লগইন হচ্ছে…' : 'নিরাপদে লগইন করুন'}</button><span className="login-security"><ShieldCheck size={16} /> আপনার তথ্য এনক্রিপ্ট করে সুরক্ষিত রাখা হয়</span>{installPrompt && <button type="button" className="install-login" onClick={installPrompt}><Download size={16} /> ফোনে অ্যাপ ইনস্টল করুন</button>}{installed && <span className="login-security">অ্যাপটি ফোনে ইনস্টল করা আছে</span>}<p className="install-hint">ইনস্টল বাটন না এলে Chrome-এর মেনু ⋮ খুলে <b>Install app</b> বা <b>Add to Home screen</b> চাপুন।</p></form></div></div> }
 function MemberNotice() {
   const [record, setRecord] = useState<{ name: string; memberId: string; savings: number; fees: number; shares: number; loan: number } | null>(null)
   const [message, setMessage] = useState('')
@@ -187,7 +202,7 @@ function ModulePage({ page, label, role }: { page: string; label: string; role: 
   const [search, setSearch] = useState('')
   const tablePages: TableKey[] = ['members', 'monthly_savings', 'annual_fees', 'share_registry', 'financial_transactions', 'investments', 'qard_hasan_loans']
   const fields: Partial<Record<TableKey, FormField[]>> = {
-    members: [{ key: 'full_name', label: 'পূর্ণ নাম', required: true }, { key: 'father_name', label: 'পিতার নাম' }, { key: 'mobile', label: 'মোবাইল নম্বর' }, { key: 'email', label: 'ইমেইল', type: 'email' }, { key: 'joining_date', label: 'যোগদানের তারিখ', type: 'date', required: true }, { key: 'present_address', label: 'বর্তমান ঠিকানা' }],
+    members: [{ key: 'full_name', label: 'পূর্ণ নাম', required: true }, { key: 'father_name', label: 'পিতার নাম' }, { key: 'mother_name', label: 'মাতার নাম' }, { key: 'mobile', label: 'মোবাইল নম্বর' }, { key: 'whatsapp', label: 'হোয়াটসঅ্যাপ নম্বর' }, { key: 'email', label: 'ইমেইল ঠিকানা', type: 'email' }, { key: 'joining_date', label: 'যোগদানের তারিখ', type: 'date', required: true }, { key: 'present_address', label: 'বর্তমান ঠিকানা' }, { key: 'permanent_address', label: 'স্থায়ী ঠিকানা' }, { key: 'notes', label: 'অতিরিক্ত তথ্য' }],
     monthly_savings: [membersField, { key: 'amount', label: 'জমার পরিমাণ', type: 'number', required: true }, { key: 'collection_month', label: 'মাস', type: 'select', required: true, options: Array.from({ length: 12 }, (_, i) => ({ value: String(i + 1), label: monthName(i + 1) })) }, { key: 'collection_year', label: 'বছর', type: 'number', required: true }, { key: 'payment_date', label: 'জমার তারিখ', type: 'date', required: true }, { key: 'payment_method', label: 'পরিশোধ পদ্ধতি' }, { key: 'reference_number', label: 'রেফারেন্স নম্বর' }],
     annual_fees: [membersField, { key: 'financial_year', label: 'অর্থবছর', required: true }, { key: 'amount', label: 'ফি-এর পরিমাণ', type: 'number', required: true }, { key: 'payment_date', label: 'পরিশোধের তারিখ', type: 'date', required: true }, { key: 'payment_method', label: 'পরিশোধ পদ্ধতি' }],
     share_registry: [membersField, { key: 'share_value', label: 'শেয়ারের মূল্য', type: 'number', required: true }, { key: 'issue_date', label: 'ইস্যুর তারিখ', type: 'date', required: true }, { key: 'payment_status', label: 'পরিশোধের অবস্থা', type: 'select', options: [{ value: 'unpaid', label: 'অপরিশোধিত' }, { value: 'partial', label: 'আংশিক' }, { value: 'paid', label: 'পরিশোধিত' }] }],
@@ -229,7 +244,18 @@ function ModulePage({ page, label, role }: { page: string; label: string; role: 
       const { transaction_type, ...fields } = payload
       const posted = await supabase.rpc('post_financial_transaction', { payload: { ...fields, transaction_type, amount: Number(fields.amount), transaction_number: `SWT-TXN-${crypto.randomUUID()}` } })
       result = { error: posted.error }
-    } else if (page === 'members') result = await supabase.from('members').insert({ ...payload, email: payload.email || null, status: 'active' })
+    } else if (page === 'members') {
+      const inserted = await supabase.from('members').insert({ ...payload, email: payload.email || null, status: 'active' }).select('id').single()
+      result = { error: inserted.error }
+      if (!inserted.error && payload.email) {
+        const memberEmail = payload.email.trim().toLowerCase()
+        const account = await supabase.from('profiles').select('id').eq('email', memberEmail).maybeSingle()
+        if (account.data?.id) {
+          const linked = await supabase.from('members').update({ auth_user_id: account.data.id }).eq('id', inserted.data.id)
+          if (linked.error) setError('সদস্য তৈরি হয়েছে, তবে লগইন অ্যাকাউন্ট যুক্ত হয়নি। Supabase Auth-এ এই ইমেইলের user তৈরি আছে কি না যাচাই করুন।')
+        }
+      }
+    }
     else if (page === 'monthly_savings') result = await supabase.from('monthly_savings').insert({ ...payload, amount: Number(payload.amount), member_id: payload.member_id, receipt_number: `SWT-MS-${crypto.randomUUID()}`, created_by: (await supabase.auth.getUser()).data.user?.id })
     else if (page === 'annual_fees') result = await supabase.from('annual_fees').insert({ ...payload, amount: Number(payload.amount), receipt_number: `SWT-AF-${crypto.randomUUID()}`, created_by: (await supabase.auth.getUser()).data.user?.id })
     else result = await supabase.from('share_registry').insert({ ...payload, share_value: Number(payload.share_value), member_id: payload.member_id, created_by: (await supabase.auth.getUser()).data.user?.id })
@@ -238,9 +264,20 @@ function ModulePage({ page, label, role }: { page: string; label: string; role: 
     setSaving(false)
   }
   const deactivate = async (id: unknown) => { if (!supabase || typeof id !== 'string') return; const result = await supabase.from('members').update({ status: 'inactive' }).eq('id', id); if (result.error) setError('সদস্যের অবস্থা পরিবর্তন হয়নি।'); else await load() }
-  if (!tablePages.includes(page as TableKey)) return <><div className="welcome-row"><div><div className="eyebrow">স্বপ্নতরী · ব্যবস্থাপনা</div><h1>{label}</h1><p>এই অংশটি পরবর্তী ধাপে Supabase ডেটার সঙ্গে যুক্ত হবে।</p></div></div><section className="panel module-panel"><div className="module-empty"><div className="chart-mark"><LayoutDashboard size={23} /></div><h2>এই অংশটি এখনো প্রস্তুত নয়</h2><p>অপ্রস্তুত ফিচার চালু দেখানো হচ্ছে না।</p></div></section></>
+  const attachLogin = async (row: Record<string, unknown>) => {
+    if (!supabase || typeof row.id !== 'string') return
+    const address = window.prompt('Supabase Auth-এ তৈরি সদস্যের ইমেইল লিখুন')?.trim()
+    if (!address) return
+    const profile = await supabase.from('profiles').select('id').eq('email', address).maybeSingle()
+    if (profile.error || !profile.data) { setError('এই ইমেইলের লগইন অ্যাকাউন্ট পাওয়া যায়নি। আগে Supabase Auth → Users-এ user তৈরি করুন।'); return }
+    const linked = await supabase.from('members').update({ auth_user_id: profile.data.id }).eq('id', row.id)
+    if (linked.error) setError('লগইন অ্যাকাউন্ট যুক্ত হয়নি। আবার চেষ্টা করুন।')
+    else { await load(); setError('সদস্যের লগইন অ্যাকাউন্ট যুক্ত হয়েছে।') }
+  }
+  if (!tablePages.includes(page as TableKey)) return <><div className="welcome-row"><div><div className="eyebrow">স্বপ্নতরী · ব্যবস্থাপনা</div><h1>{label}</h1><p>এই মডিউলটি প্রস্তুত করা বাকি।</p></div></div><section className="panel module-panel"><div className="module-empty"><div className="chart-mark"><LayoutDashboard size={23} /></div><h2>এই অংশটি এখনো প্রস্তুত নয়</h2><p>এখানে কোনো নমুনা হিসাব দেখানো হচ্ছে না। বাস্তব ডেটা ও নিরাপদ কার্যপ্রবাহ যুক্ত না হওয়া পর্যন্ত এই মডিউলটি বন্ধ আছে।</p></div></section></>
   return <><div className="welcome-row"><div><div className="eyebrow">স্বপ্নতরী · ব্যবস্থাপনা</div><h1>{label}</h1><p>ডেটাবেসে থাকা তথ্য · সর্বশেষ ১০০টি</p></div>{currentFields && role === 'super_admin' && <button className="primary-button" onClick={() => setFormOpen(true)}><Plus size={17} /> নতুন যোগ করুন</button>}</div>
     {error && <div className="notice error-notice">{error}</div>}
     {formOpen && currentFields && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setFormOpen(false) }}><section className="entry-modal"><div className="modal-heading"><div><b>নতুন {label}</b><span>তথ্য সংরক্ষণ হলে ডেটাবেসে যুক্ত হবে</span></div><button className="close-modal" onClick={() => setFormOpen(false)} aria-label="বন্ধ"><X size={18} /></button></div><form onSubmit={add} className="entry-form"><div className="field-grid">{currentFields.map((field) => <label key={field.key}>{field.label}{field.type === 'select' ? <select name={field.key} required={field.required} defaultValue="">{field.key === 'member_id' ? <><option value="">সদস্য বেছে নিন</option>{members.map((member) => <option value={member.id} key={member.id}>{member.member_id} · {member.full_name}</option>)}</> : <><option value="">নির্বাচন করুন</option>{field.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</>}</select> : <input name={field.key} type={field.type ?? 'text'} required={field.required} min={field.type === 'number' ? '0.01' : undefined} step={field.type === 'number' ? '0.01' : undefined} defaultValue={field.key === 'joining_date' || field.key === 'payment_date' || field.key === 'issue_date' ? new Date().toISOString().slice(0,10) : field.key === 'collection_month' ? String(new Date().getMonth()+1) : field.key === 'collection_year' ? String(new Date().getFullYear()) : undefined} />}</label>)}</div><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setFormOpen(false)}>বাতিল</button><button className="primary-button" disabled={saving}>{saving ? 'সংরক্ষণ হচ্ছে…' : 'সংরক্ষণ করুন'}</button></div></form></section></div>}
-    <section className="panel records-panel"><div className="records-toolbar"><b>{label} তালিকা</b><input aria-label="তালিকায় খুঁজুন" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="তথ্য খুঁজুন…" /><button className="secondary-button" onClick={() => void load()}>রিফ্রেশ</button></div><div className="table-scroll"><table><thead><tr>{currentColumns.map((col) => <th key={col.key}>{col.label}</th>)}{page === 'members' && <th>ব্যবস্থা</th>}</tr></thead><tbody>{visibleRows.map((row, index) => <tr key={String(row.id ?? index)}>{currentColumns.map((col) => <td key={col.key}>{col.money ? fmt(Number(row[col.key] ?? 0)) : col.key === 'member_id' && page !== 'members' ? (members.find((m) => m.id === row.member_id)?.member_id ?? String(row[col.key] ?? '').slice(0,8)) : displayValue(col.key, row[col.key])}</td>)}{page === 'members' && <td>{row.status === 'active' ? <button className="row-action" onClick={() => void deactivate(row.id)}>নিষ্ক্রিয় করুন</button> : '—'}</td>}</tr>)}</tbody></table>{loading ? <div className="table-empty">তথ্য আসছে…</div> : !visibleRows.length && <div className="table-empty">{search ? 'কোনো মিল পাওয়া যায়নি।' : 'এখনো কোনো তথ্য নেই। বাস্তব তথ্য যোগ হলে এখানে দেখা যাবে।'}</div>}</div></section></>
+    {page === 'members' && <div className="member-help"><ShieldCheck size={18} /><span><b>সদস্যের লগইন চালু করতে:</b> Supabase → Authentication → Users-এ সদস্যের ইমেইল দিয়ে account তৈরি করুন; তারপর তালিকায় “লগইন যুক্ত” চাপুন। সদস্য তার password নিজে সেট করবেন।</span></div>}
+    <section className="panel records-panel"><div className="records-toolbar"><b>{label} তালিকা</b><input aria-label="তালিকায় খুঁজুন" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="তথ্য খুঁজুন…" /><button className="secondary-button" onClick={() => void load()}>রিফ্রেশ</button></div><div className="table-scroll"><table><thead><tr>{currentColumns.map((col) => <th key={col.key}>{col.label}</th>)}{page === 'members' && <th>ব্যবস্থা</th>}</tr></thead><tbody>{visibleRows.map((row, index) => <tr key={String(row.id ?? index)}>{currentColumns.map((col) => <td key={col.key}>{col.money ? fmt(Number(row[col.key] ?? 0)) : col.key === 'member_id' && page !== 'members' ? (members.find((m) => m.id === row.member_id)?.member_id ?? String(row[col.key] ?? '').slice(0,8)) : displayValue(col.key, row[col.key])}</td>)}{page === 'members' && <td className="row-actions">{row.auth_user_id ? <span className="linked-account">লগইন যুক্ত</span> : <button className="row-action" onClick={() => void attachLogin(row)}>লগইন যুক্ত</button>}{row.status === 'active' && <button className="row-action" onClick={() => void deactivate(row.id)}>নিষ্ক্রিয় করুন</button>}</td>}</tr>)}</tbody></table>{loading ? <div className="table-empty">তথ্য আসছে…</div> : !visibleRows.length && <div className="table-empty">{search ? 'কোনো মিল পাওয়া যায়নি।' : 'এখনো কোনো তথ্য নেই। বাস্তব তথ্য যোগ হলে এখানে দেখা যাবে।'}</div>}</div></section></>
 }
