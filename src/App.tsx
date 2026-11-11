@@ -38,6 +38,17 @@ async function fetchAllRows<T>(fetchPage: (from: number, to: number) => PromiseL
     if (batch.length < 1000) return { data: rows, error: null }
   }
 }
+async function withTimeout<T>(request: PromiseLike<T>, timeoutMs = 20000): Promise<T> {
+  let timer: number | undefined
+  try {
+    return await Promise.race([
+      Promise.resolve(request),
+      new Promise<T>((_, reject) => { timer = window.setTimeout(() => reject(new Error('request timed out')), timeoutMs) }),
+    ])
+  } finally {
+    if (timer !== undefined) window.clearTimeout(timer)
+  }
+}
 const displayValue = (key: string, raw: unknown) => {
   if (raw === null || raw === undefined || raw === '') return '—'
   const value = String(raw)
@@ -307,37 +318,48 @@ function ModulePage({ page, label, role, userId, email }: { page: string; label:
   const visibleRows = rows
   const add = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); if (!supabase || !currentFields) return
+    const formElement = event.currentTarget
     setSaving(true); setError('')
-    const form = new FormData(event.currentTarget)
+    const form = new FormData(formElement)
     const payload = Object.fromEntries(form.entries()) as Record<string, string>
     if (payload.member_id) { const chosen = members.find((m) => m.id === payload.member_id); if (!chosen) { setError('সদস্য বেছে নিন।'); setSaving(false); return } }
-    let result: { error: { message: string } | null }
-    if (page === 'financial_transactions') {
-      const { transaction_type, ...fields } = payload
-      const posted = await supabase.rpc('post_financial_transaction', { payload: { ...fields, transaction_type, amount: Number(fields.amount), transaction_number: `SWT-TXN-${crypto.randomUUID()}` } })
-      result = { error: posted.error }
-    } else if (page === 'members' && editing && typeof editing.id === 'string') {
-      result = await supabase.from('members').update({ ...payload, share_number: payload.share_number || null, email: payload.email || null }).eq('id', editing.id)
-    } else if (page === 'members') {
-      const inserted = await supabase.from('members').insert({ ...payload, share_number: payload.share_number || null, email: payload.email || null, status: 'active' }).select('id').single()
-      result = { error: inserted.error }
-      if (!inserted.error && payload.email) {
-        const memberEmail = payload.email.trim().toLowerCase()
-        const account = await supabase.from('profiles').select('id,role').eq('email', memberEmail).maybeSingle()
-        if (account.data?.id && account.data.role === 'member') {
-          const linked = await supabase.from('members').update({ auth_user_id: account.data.id }).eq('id', inserted.data.id)
-          if (linked.error) setError('সদস্য তৈরি হয়েছে, তবে লগইন অ্যাকাউন্ট যুক্ত হয়নি। Supabase Auth-এ এই ইমেইলের user তৈরি আছে কি না যাচাই করুন।')
+    try {
+      let result: { error: { message: string } | null }
+      if (page === 'financial_transactions') {
+        const { transaction_type, ...fields } = payload
+        const posted = await withTimeout(supabase.rpc('post_financial_transaction', { payload: { ...fields, transaction_type, amount: Number(fields.amount), transaction_number: `SWT-TXN-${crypto.randomUUID()}` } }))
+        result = { error: posted.error }
+      } else if (page === 'members' && editing && typeof editing.id === 'string') {
+        result = await withTimeout(supabase.from('members').update({ ...payload, share_number: payload.share_number || null, email: payload.email || null }).eq('id', editing.id))
+      } else if (page === 'members') {
+        const inserted = await withTimeout(supabase.from('members').insert({ ...payload, share_number: payload.share_number || null, email: payload.email || null, status: 'active' }).select('id').single())
+        result = { error: inserted.error }
+        if (!inserted.error && payload.email) {
+          const memberEmail = payload.email.trim().toLowerCase()
+          const account = await withTimeout(supabase.from('profiles').select('id,role').eq('email', memberEmail).maybeSingle())
+          if (account.data?.id && account.data.role === 'member') {
+            const linked = await withTimeout(supabase.from('members').update({ auth_user_id: account.data.id }).eq('id', inserted.data.id))
+            if (linked.error) setError('সদস্য তৈরি হয়েছে, তবে লগইন অ্যাকাউন্ট যুক্ত হয়নি। Supabase Auth-এ এই ইমেইলের user তৈরি আছে কি না যাচাই করুন।')
+          }
         }
+      } else if (page === 'investments') result = await withTimeout(supabase.from('investments').insert({ ...payload, invested_amount: Number(payload.invested_amount), current_value: Number(payload.current_value), maturity_date: payload.maturity_date || null, notes: payload.notes || null, status: 'active', created_by: (await supabase.auth.getUser()).data.user?.id }))
+      else if (page === 'qard_hasan_loans') result = await withTimeout(supabase.from('qard_hasan_loans').insert({ member_id: payload.member_id, principal_amount: Number(payload.principal_amount), outstanding_amount: Number(payload.principal_amount), disbursement_date: payload.disbursement_date, notes: payload.notes || null, status: 'active', approved_by: (await supabase.auth.getUser()).data.user?.id }))
+      else if (page === 'monthly_savings') result = await withTimeout(supabase.from('monthly_savings').insert({ ...payload, amount: Number(payload.amount), member_id: payload.member_id, receipt_number: `SWT-MS-${crypto.randomUUID()}`, created_by: (await supabase.auth.getUser()).data.user?.id }))
+      else if (page === 'annual_fees') result = await withTimeout(supabase.from('annual_fees').insert({ ...payload, amount: Number(payload.amount), receipt_number: `SWT-AF-${crypto.randomUUID()}`, created_by: (await supabase.auth.getUser()).data.user?.id }))
+      else result = await withTimeout(supabase.from('share_registry').insert({ ...payload, share_value: Number(payload.share_value), member_id: payload.member_id, created_by: (await supabase.auth.getUser()).data.user?.id }))
+
+      if (result.error) {
+        const duplicate = result.error.message.toLowerCase().includes('duplicate') || result.error.message.toLowerCase().includes('unique')
+        setError(duplicate ? 'এই সদস্যের জন্য ওই মাস বা অর্থবছরের এন্ট্রি আগে থেকেই আছে। তালিকা রিফ্রেশ করুন; আবার জমা দেবেন না।' : 'তথ্য সংরক্ষণ হয়নি। প্রয়োজনীয় তথ্য ও ডেটাবেস নীতি যাচাই করুন।')
+      } else {
+        setFormOpen(false); setEditing(null); formElement.reset(); setPageIndex(0); setSaving(false)
+        void load(0).catch(() => setError('তথ্য সংরক্ষিত হয়েছে, তবে তালিকা আপডেট হয়নি। রিফ্রেশ করে দেখুন।'))
       }
+    } catch {
+      setError('সাড়া পেতে বেশি সময় লাগছে, তাই সংরক্ষণ নিশ্চিত করা যায়নি। আগে তালিকা রিফ্রেশ করে দেখুন—রেকর্ড থাকলে আবার জমা দেবেন না।')
+    } finally {
+      setSaving(false)
     }
-    else if (page === 'investments') result = await supabase.from('investments').insert({ ...payload, invested_amount: Number(payload.invested_amount), current_value: Number(payload.current_value), maturity_date: payload.maturity_date || null, notes: payload.notes || null, status: 'active', created_by: (await supabase.auth.getUser()).data.user?.id })
-    else if (page === 'qard_hasan_loans') result = await supabase.from('qard_hasan_loans').insert({ member_id: payload.member_id, principal_amount: Number(payload.principal_amount), outstanding_amount: Number(payload.principal_amount), disbursement_date: payload.disbursement_date, notes: payload.notes || null, status: 'active', approved_by: (await supabase.auth.getUser()).data.user?.id })
-    else if (page === 'monthly_savings') result = await supabase.from('monthly_savings').insert({ ...payload, amount: Number(payload.amount), member_id: payload.member_id, receipt_number: `SWT-MS-${crypto.randomUUID()}`, created_by: (await supabase.auth.getUser()).data.user?.id })
-    else if (page === 'annual_fees') result = await supabase.from('annual_fees').insert({ ...payload, amount: Number(payload.amount), receipt_number: `SWT-AF-${crypto.randomUUID()}`, created_by: (await supabase.auth.getUser()).data.user?.id })
-    else result = await supabase.from('share_registry').insert({ ...payload, share_value: Number(payload.share_value), member_id: payload.member_id, created_by: (await supabase.auth.getUser()).data.user?.id })
-    if (result.error) setError(result.error.message.includes('duplicate') || result.error.message.includes('unique') ? 'এই সময়ের জন্য এন্ট্রি আগে থেকেই আছে। তালিকা যাচাই করুন।' : 'তথ্য সংরক্ষণ হয়নি। প্রয়োজনীয় তথ্য ও ডেটাবেস নীতি যাচাই করুন।')
-    else { setFormOpen(false); setEditing(null); event.currentTarget.reset(); setPageIndex(0); await load(0) }
-    setSaving(false)
   }
   const deleteMember = async (row: Record<string, unknown>) => {
     if (!supabase || typeof row.id !== 'string') return
