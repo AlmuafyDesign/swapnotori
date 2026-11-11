@@ -7,7 +7,7 @@
 1. `npm install`
 2. `.env.example` কপি করে `.env` তৈরি করুন; Supabase Project URL ও public anon/publishable key যোগ করুন।
 3. `supabase/migrations`-এর migration Supabase SQL Editor-এ চালান।
-4. Auth → Users থেকে প্রথম প্রশাসক ব্যবহারকারী তৈরি করুন। তারপর SQL Editor-এ ওই ঠিকানাকে administrator দিন: `update public.profiles set role='super_admin' where email='your-admin-email';`
+4. অনুমোদিত সুপার অ্যাডমিন Gmail `swapnotoriapp@gmail.com` দিয়ে Auth user তৈরি করুন। SQL Editor-এ admin allowlist migration চালালে শুধু এই ঠিকানাটিই `super_admin` হবে; অন্য সব নতুন অ্যাকাউন্ট `member` থাকবে।
 5. `npm run dev`
 
 Frontend-এ কখনো service-role key ব্যবহার করবেন না। প্রথম migration কোনো ডেমো সদস্য বা আর্থিক রেকর্ড তৈরি করে না।

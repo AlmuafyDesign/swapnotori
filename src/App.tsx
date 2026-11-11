@@ -24,6 +24,7 @@ const navigation: { label: string; icon: LucideIcon; section?: string; page: Tab
 const fmt = (value: number) => `৳${new Intl.NumberFormat('bn-BD', { maximumFractionDigits: 0 }).format(value)}`
 const logoUrl = `${import.meta.env.BASE_URL}icon.jpg`
 const authRedirectUrl = 'https://almuafydesign.github.io/swapnotori/'
+const SUPER_ADMIN_EMAIL = 'swapnotoriapp@gmail.com'
 const dateBn = new Intl.DateTimeFormat('bn-BD', { dateStyle: 'long', timeZone: 'Asia/Dhaka' }).format(new Date())
 const monthName = (n: number) => new Intl.DateTimeFormat('bn-BD', { month: 'short', timeZone: 'Asia/Dhaka' }).format(new Date(2026, n - 1, 1))
 const prettyDate = (date: string) => new Intl.DateTimeFormat('bn-BD', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Dhaka' }).format(new Date(`${date.slice(0, 10)}T00:00:00+06:00`))
@@ -99,7 +100,15 @@ export default function App() {
     if (!session || !supabase) { setRole(null); return }
     let alive = true
     void supabase.from('profiles').select('role').eq('id', session.user.id).single().then(({ data, error: e }) => {
-      if (alive) { setRole(data?.role ?? null); if (e) setError('আপনার অ্যাকাউন্টের ভূমিকা যাচাই করা যায়নি। প্রশাসকের সাথে যোগাযোগ করুন।') }
+      if (!alive) return
+      if (data?.role === 'super_admin' && session.user.email?.trim().toLowerCase() !== SUPER_ADMIN_EMAIL) {
+        setRole(null)
+        setError('এই Gmail সুপার অ্যাডমিন হিসেবে অনুমোদিত নয়।')
+        void supabase?.auth.signOut()
+        return
+      }
+      setRole(data?.role ?? null)
+      if (e) setError('আপনার অ্যাকাউন্টের ভূমিকা যাচাই করা যায়নি। প্রশাসকের সাথে যোগাযোগ করুন।')
     })
     return () => { alive = false }
   }, [session])
