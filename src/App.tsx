@@ -6,14 +6,13 @@ import type { Session } from '@supabase/supabase-js'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { supabase, supabaseConfigured } from './lib/supabase'
 
-type TableKey = 'members' | 'monthly_savings' | 'annual_fees' | 'share_registry' | 'financial_transactions' | 'investments' | 'qard_hasan_loans'
+type TableKey = 'members' | 'monthly_savings' | 'annual_fees' | 'financial_transactions' | 'investments' | 'qard_hasan_loans'
 type Metric = { label: string; amount?: number; count?: number; icon: LucideIcon; tone: string; currency?: boolean }
 const navigation: { label: string; icon: LucideIcon; section?: string; page: TableKey | 'dashboard' | 'reports' | 'funds' | 'constitution' | 'settings' }[] = [
   { label: 'ড্যাশবোর্ড', icon: LayoutDashboard, page: 'dashboard' },
   { label: 'সদস্য ব্যবস্থাপনা', icon: Users, page: 'members', section: 'প্রতিষ্ঠান' },
   { label: 'মাসিক সঞ্চয়', icon: WalletCards, page: 'monthly_savings' },
   { label: 'বার্ষিক ফি', icon: FileChartColumn, page: 'annual_fees' },
-  { label: 'শেয়ার নিবন্ধন', icon: Coins, page: 'share_registry' },
   { label: 'আয়–ব্যয়', icon: Activity, page: 'financial_transactions', section: 'হিসাব' },
   { label: 'বিনিয়োগ', icon: BriefcaseBusiness, page: 'investments' },
   { label: 'করযে হাসানা', icon: HandCoins, page: 'qard_hasan_loans' },
@@ -209,8 +208,9 @@ function MemberNotice() {
     let alive = true
     const load = async () => {
       if (!supabase) return
-      const { data: member, error: memberError } = await supabase.from('members').select('id,member_id,full_name').single()
+      const { data: member, error: memberError } = await supabase.from('members').select('id,member_id,full_name,status').single()
       if (memberError || !member) { if (alive) setMessage(memberError?.code === 'PGRST116' ? 'আপনার লগইন অ্যাকাউন্টের সাথে সদস্য-পরিচিতি যুক্ত করা হয়নি।' : 'আপনার সদস্য-তথ্য আনা যায়নি।'); return }
+      if (member.status !== 'active') { if (alive) setMessage('আপনার সদস্যপদ বর্তমানে সক্রিয় নয়। হিসাব দেখতে প্রশাসকের সাথে যোগাযোগ করুন।'); return }
       const [savings, fees, shares, loans] = await Promise.all([
         fetchAllRows((from,to) => supabase!.from('monthly_savings').select('receipt_number,amount,collection_month,collection_year,payment_date').eq('member_id', member.id).order('payment_date', { ascending: false }).range(from,to)),
         fetchAllRows((from,to) => supabase!.from('annual_fees').select('receipt_number,financial_year,amount,payment_date').eq('member_id', member.id).order('payment_date', { ascending: false }).range(from,to)),
@@ -249,30 +249,27 @@ function ModulePage({ page, label, role, userId, email }: { page: string; label:
   const [searchQuery, setSearchQuery] = useState('')
   const [pageIndex, setPageIndex] = useState(0)
   const [totalRows, setTotalRows] = useState(0)
-  const tablePages: TableKey[] = ['members', 'monthly_savings', 'annual_fees', 'share_registry', 'financial_transactions', 'investments', 'qard_hasan_loans']
+  const tablePages: TableKey[] = ['members', 'monthly_savings', 'annual_fees', 'financial_transactions', 'investments', 'qard_hasan_loans']
   const fields: Partial<Record<TableKey, FormField[]>> = {
-    members: [{ key: 'full_name', label: 'পূর্ণ নাম', required: true }, { key: 'father_name', label: 'পিতার নাম' }, { key: 'mother_name', label: 'মাতার নাম' }, { key: 'mobile', label: 'মোবাইল নম্বর' }, { key: 'whatsapp', label: 'হোয়াটসঅ্যাপ নম্বর' }, { key: 'email', label: 'ইমেইল ঠিকানা', type: 'email' }, { key: 'joining_date', label: 'যোগদানের তারিখ', type: 'date', required: true }, { key: 'present_address', label: 'বর্তমান ঠিকানা' }, { key: 'permanent_address', label: 'স্থায়ী ঠিকানা' }, { key: 'notes', label: 'অতিরিক্ত তথ্য' }],
+    members: [{ key: 'full_name', label: 'পূর্ণ নাম', required: true }, { key: 'father_name', label: 'পিতার নাম' }, { key: 'mother_name', label: 'মাতার নাম' }, { key: 'mobile', label: 'মোবাইল নম্বর' }, { key: 'whatsapp', label: 'হোয়াটসঅ্যাপ নম্বর' }, { key: 'share_number', label: 'শেয়ার নম্বর' }, { key: 'email', label: 'প্রধান Gmail', type: 'email' }, { key: 'joining_date', label: 'যোগদানের তারিখ', type: 'date', required: true }, { key: 'present_address', label: 'বর্তমান ঠিকানা' }, { key: 'permanent_address', label: 'স্থায়ী ঠিকানা' }, { key: 'notes', label: 'অতিরিক্ত তথ্য' }],
     monthly_savings: [membersField, { key: 'amount', label: 'জমার পরিমাণ', type: 'number', required: true }, { key: 'collection_month', label: 'মাস', type: 'select', required: true, options: Array.from({ length: 12 }, (_, i) => ({ value: String(i + 1), label: monthName(i + 1) })) }, { key: 'collection_year', label: 'বছর', type: 'number', required: true }, { key: 'payment_date', label: 'জমার তারিখ', type: 'date', required: true }, { key: 'payment_method', label: 'পরিশোধ পদ্ধতি' }, { key: 'reference_number', label: 'রেফারেন্স নম্বর' }],
     annual_fees: [membersField, { key: 'financial_year', label: 'অর্থবছর', required: true }, { key: 'amount', label: 'ফি-এর পরিমাণ', type: 'number', required: true }, { key: 'payment_date', label: 'পরিশোধের তারিখ', type: 'date', required: true }, { key: 'payment_method', label: 'পরিশোধ পদ্ধতি' }],
-    share_registry: [membersField, { key: 'share_value', label: 'শেয়ারের মূল্য', type: 'number', required: true }, { key: 'issue_date', label: 'ইস্যুর তারিখ', type: 'date', required: true }, { key: 'payment_status', label: 'পরিশোধের অবস্থা', type: 'select', options: [{ value: 'unpaid', label: 'অপরিশোধিত' }, { value: 'partial', label: 'আংশিক' }, { value: 'paid', label: 'পরিশোধিত' }] }],
     financial_transactions: [{ key: 'transaction_date', label: 'লেনদেনের তারিখ', type: 'date', required: true }, { key: 'transaction_type', label: 'ধরন', type: 'select', required: true, options: [{ value: 'income', label: 'আয়' }, { value: 'expense', label: 'ব্যয়' }] }, { key: 'category', label: 'খাত', required: true }, { key: 'amount', label: 'পরিমাণ', type: 'number', required: true }, { key: 'description', label: 'বিবরণ', required: true }, { key: 'reference_number', label: 'রেফারেন্স নম্বর' }, { key: 'payment_method', label: 'পরিশোধ পদ্ধতি' }],
     investments: [{ key: 'title', label: 'বিনিয়োগের নাম', required: true }, { key: 'investment_type', label: 'বিনিয়োগের ধরন', required: true }, { key: 'invested_amount', label: 'বিনিয়োগকৃত অর্থ', type: 'number', required: true }, { key: 'current_value', label: 'বর্তমান মূল্য', type: 'number', required: true }, { key: 'start_date', label: 'শুরুর তারিখ', type: 'date', required: true }, { key: 'maturity_date', label: 'মেয়াদপূর্তির তারিখ', type: 'date' }, { key: 'notes', label: 'বিবরণ' }],
     qard_hasan_loans: [membersField, { key: 'principal_amount', label: 'ঋণের পরিমাণ', type: 'number', required: true }, { key: 'disbursement_date', label: 'প্রদানের তারিখ', type: 'date', required: true }, { key: 'notes', label: 'বিবরণ' }],
   }
   const columns: Partial<Record<TableKey, { key: string; label: string; money?: boolean }[]>> = {
-    members: [{ key: 'member_id', label: 'সদস্য নম্বর' }, { key: 'full_name', label: 'নাম' }, { key: 'mobile', label: 'মোবাইল' }, { key: 'joining_date', label: 'যোগদানের তারিখ' }, { key: 'status', label: 'অবস্থা' }],
+    members: [{ key: 'member_id', label: 'সদস্য নম্বর' }, { key: 'full_name', label: 'নাম' }, { key: 'share_number', label: 'শেয়ার নম্বর' }, { key: 'mobile', label: 'মোবাইল' }, { key: 'joining_date', label: 'যোগদানের তারিখ' }, { key: 'status', label: 'অবস্থা' }],
     monthly_savings: [{ key: 'receipt_number', label: 'রসিদ নম্বর' }, { key: 'member_id', label: 'সদস্য আইডি' }, { key: 'collection_month', label: 'মাস' }, { key: 'collection_year', label: 'বছর' }, { key: 'amount', label: 'পরিমাণ', money: true }, { key: 'payment_date', label: 'তারিখ' }],
     annual_fees: [{ key: 'receipt_number', label: 'রসিদ নম্বর' }, { key: 'member_id', label: 'সদস্য আইডি' }, { key: 'financial_year', label: 'অর্থবছর' }, { key: 'amount', label: 'পরিমাণ', money: true }, { key: 'payment_date', label: 'তারিখ' }],
-    share_registry: [{ key: 'share_number', label: 'শেয়ার নম্বর' }, { key: 'member_id', label: 'সদস্য আইডি' }, { key: 'share_value', label: 'মূল্য', money: true }, { key: 'issue_date', label: 'ইস্যুর তারিখ' }, { key: 'payment_status', label: 'পরিশোধ' }, { key: 'ownership_status', label: 'মালিকানা' }],
     financial_transactions: [{ key: 'transaction_number', label: 'লেনদেন নম্বর' }, { key: 'transaction_type', label: 'ধরন' }, { key: 'category', label: 'খাত' }, { key: 'description', label: 'বিবরণ' }, { key: 'amount', label: 'পরিমাণ', money: true }, { key: 'transaction_date', label: 'তারিখ' }],
     investments: [{ key: 'title', label: 'বিনিয়োগ' }, { key: 'investment_type', label: 'ধরন' }, { key: 'invested_amount', label: 'বিনিয়োগকৃত', money: true }, { key: 'current_value', label: 'বর্তমান মূল্য', money: true }, { key: 'status', label: 'অবস্থা' }],
     qard_hasan_loans: [{ key: 'member_id', label: 'সদস্য আইডি' }, { key: 'principal_amount', label: 'মূল ঋণ', money: true }, { key: 'outstanding_amount', label: 'বকেয়া', money: true }, { key: 'disbursement_date', label: 'প্রদানের তারিখ' }, { key: 'status', label: 'অবস্থা' }],
   }
   const searchableColumns: Partial<Record<TableKey, string[]>> = {
-    members: ['member_id','full_name','father_name','mother_name','mobile','whatsapp','email','present_address','permanent_address','notes'],
+    members: ['member_id','share_number','full_name','father_name','mother_name','mobile','whatsapp','email','present_address','permanent_address','notes'],
     monthly_savings: ['receipt_number','payment_method','reference_number','notes'],
     annual_fees: ['receipt_number','financial_year','payment_method','reference_number','notes'],
-    share_registry: ['share_number','payment_status','notes'],
     financial_transactions: ['transaction_number','category','description','reference_number','payment_method'],
     investments: ['title','investment_type','status','notes'],
     qard_hasan_loans: ['notes','status'],
@@ -287,7 +284,7 @@ function ModulePage({ page, label, role, userId, email }: { page: string; label:
     const query = await builder.order('created_at', { ascending: false }).range(targetPage * 100, targetPage * 100 + 99)
     if (query.error) { setError('এই পাতার তথ্য আনা যায়নি। সংযোগ ঠিক করে আবার রিফ্রেশ করুন।'); setRows([]); setTotalRows(0) }
     else { setRows((query.data ?? []) as Record<string, unknown>[]); setTotalRows(query.count ?? 0) }
-    if (['monthly_savings', 'annual_fees', 'share_registry'].includes(page)) {
+    if (['monthly_savings', 'annual_fees'].includes(page)) {
       const result = await fetchAllRows((from,to) => supabase!.from('members').select('id,member_id,full_name').order('member_number').range(from,to))
       if (!result.error) setMembers(result.data ?? [])
     }
@@ -311,9 +308,9 @@ function ModulePage({ page, label, role, userId, email }: { page: string; label:
       const posted = await supabase.rpc('post_financial_transaction', { payload: { ...fields, transaction_type, amount: Number(fields.amount), transaction_number: `SWT-TXN-${crypto.randomUUID()}` } })
       result = { error: posted.error }
     } else if (page === 'members' && editing && typeof editing.id === 'string') {
-      result = await supabase.from('members').update({ ...payload, email: payload.email || null }).eq('id', editing.id)
+      result = await supabase.from('members').update({ ...payload, share_number: payload.share_number || null, email: payload.email || null }).eq('id', editing.id)
     } else if (page === 'members') {
-      const inserted = await supabase.from('members').insert({ ...payload, email: payload.email || null, status: 'active' }).select('id').single()
+      const inserted = await supabase.from('members').insert({ ...payload, share_number: payload.share_number || null, email: payload.email || null, status: 'active' }).select('id').single()
       result = { error: inserted.error }
       if (!inserted.error && payload.email) {
         const memberEmail = payload.email.trim().toLowerCase()
@@ -333,11 +330,20 @@ function ModulePage({ page, label, role, userId, email }: { page: string; label:
     else { setFormOpen(false); setEditing(null); event.currentTarget.reset(); setPageIndex(0); await load(0) }
     setSaving(false)
   }
-  const deactivate = async (id: unknown) => { if (!supabase || typeof id !== 'string') return; const result = await supabase.from('members').update({ status: 'inactive' }).eq('id', id); if (result.error) setError('সদস্যের অবস্থা পরিবর্তন হয়নি।'); else await load() }
-  const reactivate = async (id: unknown) => { if (!supabase || typeof id !== 'string') return; const result = await supabase.from('members').update({ status: 'active' }).eq('id', id); if (result.error) setError('সদস্য পুনরায় চালু হয়নি।'); else await load() }
-  const attachLogin = async (row: Record<string, unknown>) => {
+  const endMembership = async (row: Record<string, unknown>) => {
     if (!supabase || typeof row.id !== 'string') return
-    const address = (typeof row.email === 'string' && row.email.trim()) || window.prompt('সদস্যের ইমেইল ঠিকানা লিখুন')?.trim()
+    if (!window.confirm(`${String(row.full_name ?? 'এই সদস্য')}র সদস্যপদ সমাপ্ত করবেন? পুরোনো হিসাব সংরক্ষিত থাকবে, লগইন বন্ধ হবে।`)) return
+    const reason = window.prompt('সদস্যপদ সমাপ্তির কারণ (ঐচ্ছিক):')?.trim() ?? ''
+    setSaving(true); setError('')
+    const result = await supabase.from('members').update({ status: 'archived', membership_ended_at: new Date().toISOString(), exit_reason: reason || null }).eq('id', row.id)
+    if (result.error) setError('সদস্যপদ সমাপ্ত হয়নি। ডেটাবেসের নতুন পরিবর্তনটি চালানো হয়েছে কি না যাচাই করুন।')
+    else await load()
+    setSaving(false)
+  }
+  const reactivate = async (id: unknown) => { if (!supabase || typeof id !== 'string') return; const result = await supabase.from('members').update({ status: 'active' }).eq('id', id); if (result.error) setError('সদস্য পুনরায় চালু হয়নি।'); else await load() }
+  const manageLogin = async (row: Record<string, unknown>, makePrimary = false) => {
+    if (!supabase || typeof row.id !== 'string') return
+    const address = window.prompt(makePrimary ? 'সদস্যের নতুন প্রধান Gmail লিখুন:' : 'সদস্যের বিকল্প Gmail লিখুন:')?.trim()
     if (!address) return
     setError(''); setSaving(true)
     const normalizedEmail = address.toLowerCase()
@@ -345,9 +351,30 @@ function ModulePage({ page, label, role, userId, email }: { page: string; label:
     if (sent.error) { setError('লগইন লিংক পাঠানো যায়নি। ইমেইল ঠিকানা যাচাই করে আবার চেষ্টা করুন।'); setSaving(false); return }
     const profile = await supabase.from('profiles').select('id,role').eq('email', normalizedEmail).maybeSingle()
     if (profile.error || !profile.data || profile.data.role !== 'member') { setError('লিংক পাঠানো হয়েছে, তবে অ্যাকাউন্ট যুক্ত করা যায়নি। একটু পরে আবার চেষ্টা করুন।'); setSaving(false); return }
-    const linked = await supabase.from('members').update({ auth_user_id: profile.data.id, email: normalizedEmail }).eq('id', row.id)
-    if (linked.error) setError('লিংক পাঠানো হয়েছে, কিন্তু অ্যাকাউন্ট যুক্ত হয়নি। ইমেইলটি অন্য সদস্যের সাথে যুক্ত আছে কি না দেখুন।')
-    else { await load(); setError('সদস্যের ইমেইলে নিরাপদ লগইন লিংক পাঠানো হয়েছে। লিংকে চাপ দিলেই তিনি অ্যাপে প্রবেশ করতে পারবেন।') }
+    const already = await supabase.from('members').select('id').eq('auth_user_id', profile.data.id).maybeSingle()
+    const aliasOwner = await supabase.from('member_login_accounts').select('member_id').eq('auth_user_id', profile.data.id).maybeSingle()
+    if ((already.data && already.data.id !== row.id) || (aliasOwner.data && aliasOwner.data.member_id !== row.id)) { setError('এই Gmail অন্য সদস্যের সাথে যুক্ত আছে।'); setSaving(false); return }
+    if (makePrimary) {
+      const oldAccountId = typeof row.auth_user_id === 'string' ? row.auth_user_id : null
+      if (oldAccountId && oldAccountId !== profile.data.id) {
+        const oldAlias = await supabase.from('member_login_accounts').select('id').eq('auth_user_id', oldAccountId).maybeSingle()
+        if (!oldAlias.data) {
+          const oldProfile = await supabase.from('profiles').select('email').eq('id', oldAccountId).maybeSingle()
+          if (!oldProfile.data?.email) { setError('পুরোনো Gmail খুঁজে পাওয়া যায়নি, তাই নিরাপদে পরিবর্তন করা যায়নি।'); setSaving(false); return }
+          const savedOld = await supabase.from('member_login_accounts').insert({ member_id: row.id, auth_user_id: oldAccountId, email: oldProfile.data.email, added_by: (await supabase.auth.getUser()).data.user?.id })
+          if (savedOld.error) { setError('পুরোনো Gmail-টি বিকল্প হিসেবে সংরক্ষণ করা যায়নি, তাই পরিবর্তন করা হয়নি।'); setSaving(false); return }
+        }
+      }
+      const changed = await supabase.from('members').update({ auth_user_id: profile.data.id, email: normalizedEmail }).eq('id', row.id)
+      if (changed.error) setError('প্রধান Gmail বদলানো যায়নি।')
+      else { await supabase.from('member_login_accounts').delete().eq('auth_user_id', profile.data.id); await load(); setError('নতুন Gmail প্রধান হয়েছে, আগের Gmail বিকল্প হিসেবে রাখা হয়েছে।') }
+    } else if (already.data?.id === row.id || aliasOwner.data?.member_id === row.id) {
+      setError('এই Gmail আগে থেকেই এই সদস্যের লগইনে যুক্ত আছে।')
+    } else {
+      const linked = await supabase.from('member_login_accounts').insert({ member_id: row.id, auth_user_id: profile.data.id, email: normalizedEmail, added_by: (await supabase.auth.getUser()).data.user?.id })
+      if (linked.error) setError('বিকল্প Gmail যুক্ত হয়নি। ঠিকানাটি অন্য সদস্যের সাথে যুক্ত থাকতে পারে।')
+      else { await load(); setError('বিকল্প Gmail যুক্ত হয়েছে এবং তাতে নিরাপদ লগইন লিংক পাঠানো হয়েছে।') }
+    }
     setSaving(false)
   }
     if (page === 'funds') return <FundModule label={label} />
@@ -358,8 +385,8 @@ function ModulePage({ page, label, role, userId, email }: { page: string; label:
   return <><div className="welcome-row"><div><div className="eyebrow">স্বপ্নতরী · ব্যবস্থাপনা</div><h1>{label}</h1><p>ডেটাবেসে থাকা সব রেকর্ড · মোট {new Intl.NumberFormat('bn-BD').format(totalRows)}টি</p></div>{currentFields && role === 'super_admin' && <button className="primary-button" onClick={() => { setEditing(null); setFormOpen(true) }}><Plus size={17} /> নতুন যোগ করুন</button>}</div>
     {error && <div className="notice error-notice">{error}</div>}
     {formOpen && currentFields && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) { setFormOpen(false); setEditing(null) } }}><section className="entry-modal"><div className="modal-heading"><div><b>{editing ? 'সদস্যের তথ্য সম্পাদনা' : `নতুন ${label}`}</b><span>{editing ? 'পরিবর্তন সংরক্ষণ করলে সদস্যের তথ্য হালনাগাদ হবে' : 'তথ্য সংরক্ষণ হলে ডেটাবেসে যুক্ত হবে'}</span></div><button className="close-modal" onClick={() => { setFormOpen(false); setEditing(null) }} aria-label="বন্ধ"><X size={18} /></button></div><form onSubmit={add} className="entry-form"><div className="field-grid">{currentFields.map((field) => <label key={field.key}>{field.label}{field.type === 'select' ? <select name={field.key} required={field.required} defaultValue="">{field.key === 'member_id' ? <><option value="">সদস্য বেছে নিন</option>{members.map((member) => <option value={member.id} key={member.id}>{member.member_id} · {member.full_name}</option>)}</> : <><option value="">নির্বাচন করুন</option>{field.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</>}</select> : <input name={field.key} type={field.type ?? 'text'} required={field.required} readOnly={Boolean(editing?.auth_user_id && field.key === 'email')} min={field.type === 'number' ? '0.01' : undefined} step={field.type === 'number' ? '0.01' : undefined} defaultValue={editing ? String(editing[field.key] ?? '') : field.key === 'joining_date' || field.key === 'payment_date' || field.key === 'issue_date' || field.key === 'start_date' || field.key === 'disbursement_date' ? new Date().toISOString().slice(0,10) : field.key === 'collection_month' ? String(new Date().getMonth()+1) : field.key === 'collection_year' ? String(new Date().getFullYear()) : undefined} />}</label>)}</div><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => { setFormOpen(false); setEditing(null) }}>বাতিল</button><button className="primary-button" disabled={saving}>{saving ? 'সংরক্ষণ হচ্ছে…' : 'সংরক্ষণ করুন'}</button></div></form></section></div>}
-    {page === 'members' && <div className="member-help"><ShieldCheck size={18} /><span><b>সদস্যের লগইন চালু করতে:</b> সদস্যের ইমেইলটি সদস্যের তথ্যে রাখুন, তারপর “লগইন চালু” চাপুন। সদস্য ইমেইলে পাওয়া নিরাপদ লিংকে চাপলেই অ্যাপে ঢুকতে পারবেন।</span></div>}
-    <section className="panel records-panel"><div className="records-toolbar"><b>{label} তালিকা</b><input aria-label="সব রেকর্ডে খুঁজুন" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="সব রেকর্ডে খুঁজুন…" /><button className="secondary-button" onClick={() => void load()}>রিফ্রেশ</button></div><div className="table-scroll"><table><thead><tr>{currentColumns.map((col) => <th key={col.key}>{col.label}</th>)}{page === 'members' && <th>ব্যবস্থা</th>}</tr></thead><tbody>{visibleRows.map((row, index) => <tr key={String(row.id ?? index)}>{currentColumns.map((col) => <td key={col.key}>{col.money ? fmt(Number(row[col.key] ?? 0)) : col.key === 'member_id' && page !== 'members' ? (members.find((m) => m.id === row.member_id)?.member_id ?? String(row[col.key] ?? '').slice(0,8)) : displayValue(col.key, row[col.key])}</td>)}{page === 'members' && <td className="row-actions"><button className="row-action row-edit" onClick={() => { setEditing(row); setFormOpen(true) }}>সম্পাদনা</button><button className={`row-action ${row.auth_user_id ? 'row-reactivate' : ''}`} disabled={saving} onClick={() => void attachLogin(row)}>{row.auth_user_id ? 'লগইন লিংক পাঠান' : 'লগইন চালু'}</button>{row.status === 'active' ? <button className="row-action" onClick={() => void deactivate(row.id)}>নিষ্ক্রিয় করুন</button> : <button className="row-action row-reactivate" onClick={() => void reactivate(row.id)}>আবার চালু</button>}</td>}</tr>)}</tbody></table>{loading ? <div className="table-empty">তথ্য আসছে…</div> : !visibleRows.length && <div className="table-empty">{search ? 'এই খোঁজে কোনো রেকর্ড নেই।' : 'এখনো কোনো তথ্য নেই। বাস্তব তথ্য যোগ হলে এখানে দেখা যাবে।'}</div>}</div><div className="pagination"><span>পাতা {new Intl.NumberFormat('bn-BD').format(pageIndex + 1)} / {new Intl.NumberFormat('bn-BD').format(Math.max(1, Math.ceil(totalRows / 100)))}</span><div><button className="secondary-button" disabled={pageIndex === 0 || loading} onClick={() => setPageIndex((n) => n - 1)}>আগের পাতা</button><button className="secondary-button" disabled={(pageIndex + 1) * 100 >= totalRows || loading} onClick={() => setPageIndex((n) => n + 1)}>পরের পাতা</button></div></div></section></>
+    {page === 'members' && <div className="member-help"><ShieldCheck size={18} /><span><b>সদস্যের Gmail:</b> সদস্য যোগের সময় শেয়ার নম্বর দিন। সদস্যের একাধিক Gmail যোগ করা যাবে; Gmail বদলালে আগেরটিও বিকল্প হিসেবে থাকবে। সদস্য চলে গেলে “সদস্যপদ সমাপ্ত” করুন—পুরোনো হিসাব থাকবে, লগইন বন্ধ হবে।</span></div>}
+    <section className="panel records-panel"><div className="records-toolbar"><b>{label} তালিকা</b><input aria-label="সব রেকর্ডে খুঁজুন" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="সব রেকর্ডে খুঁজুন…" /><button className="secondary-button" onClick={() => void load()}>রিফ্রেশ</button></div><div className="table-scroll"><table><thead><tr>{currentColumns.map((col) => <th key={col.key}>{col.label}</th>)}{page === 'members' && <th>ব্যবস্থা</th>}</tr></thead><tbody>{visibleRows.map((row, index) => <tr key={String(row.id ?? index)}>{currentColumns.map((col) => <td key={col.key}>{col.money ? fmt(Number(row[col.key] ?? 0)) : col.key === 'member_id' && page !== 'members' ? (members.find((m) => m.id === row.member_id)?.member_id ?? String(row[col.key] ?? '').slice(0,8)) : displayValue(col.key, row[col.key])}</td>)}{page === 'members' && <td className="row-actions"><button className="row-action row-edit" onClick={() => { setEditing(row); setFormOpen(true) }}>সম্পাদনা</button><button className="row-action" disabled={saving} onClick={() => void manageLogin(row, false)}>বিকল্প Gmail যোগ</button><button className="row-action row-reactivate" disabled={saving} onClick={() => void manageLogin(row, true)}>Gmail বদলান</button>{row.status === 'active' ? <button className="row-action" disabled={saving} onClick={() => void endMembership(row)}>সদস্যপদ সমাপ্ত</button> : <button className="row-action row-reactivate" disabled={saving} onClick={() => void reactivate(row.id)}>আবার চালু</button>}</td>}</tr>)}</tbody></table>{loading ? <div className="table-empty">তথ্য আসছে…</div> : !visibleRows.length && <div className="table-empty">{search ? 'এই খোঁজে কোনো রেকর্ড নেই।' : 'এখনো কোনো তথ্য নেই। বাস্তব তথ্য যোগ হলে এখানে দেখা যাবে।'}</div>}</div><div className="pagination"><span>পাতা {new Intl.NumberFormat('bn-BD').format(pageIndex + 1)} / {new Intl.NumberFormat('bn-BD').format(Math.max(1, Math.ceil(totalRows / 100)))}</span><div><button className="secondary-button" disabled={pageIndex === 0 || loading} onClick={() => setPageIndex((n) => n - 1)}>আগের পাতা</button><button className="secondary-button" disabled={(pageIndex + 1) * 100 >= totalRows || loading} onClick={() => setPageIndex((n) => n + 1)}>পরের পাতা</button></div></div></section></>
 }
 
 function FundModule({ label }: { label: string }) {
