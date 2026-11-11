@@ -256,6 +256,34 @@ function MemberHistory({ title, rows, columns }: { title: string; rows: Record<s
   return <section className="panel member-history"><h2>{title}<small>{new Intl.NumberFormat('bn-BD').format(rows.length)}টি</small></h2><div className="table-scroll"><table><thead><tr>{columns.map((column) => <th key={column.key}>{column.label}</th>)}</tr></thead><tbody>{visible.map((row, index) => <tr key={String(row.id ?? row.receipt_number ?? index)}>{columns.map((column) => <td key={column.key}>{column.key.endsWith('_date') || column.key === 'payment_date' || column.key === 'issue_date' || column.key === 'disbursement_date' ? displayValue('x_date', row[column.key]) : ['amount', 'share_value', 'principal_amount', 'outstanding_amount'].includes(column.key) ? fmt(Number(row[column.key] ?? 0)) : column.key === 'collection_month' ? monthName(Number(row[column.key])) : displayValue(column.key, row[column.key])}</td>)}</tr>)}</tbody></table>{!rows.length && <div className="table-empty">এখনো কোনো তথ্য নেই</div>}</div>{rows.length > pageSize && <div className="mini-pagination"><button disabled={pageIndex === 0} onClick={() => setPageIndex((n) => n - 1)}>আগে</button><span>{pageIndex + 1}/{Math.ceil(rows.length / pageSize)}</span><button disabled={(pageIndex + 1) * pageSize >= rows.length} onClick={() => setPageIndex((n) => n + 1)}>পরে</button></div>}</section>
 }
 type FormField = { key: string; label: string; type?: string; required?: boolean; options?: { value: string; label: string }[] }
+type DepositReceipt = { kind: 'monthly' | 'annual'; receiptNumber: string; memberName: string; memberNumber: string; amount: number; date: string; period: string; paymentMethod: string; reference: string }
+function makeReceiptImage(receipt: DepositReceipt): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const canvas = document.createElement('canvas'); canvas.width = 1200; canvas.height = 700
+    const ctx = canvas.getContext('2d')
+    if (!ctx) { reject(new Error('Receipt image is unavailable')); return }
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 1200, 700); ctx.strokeStyle = '#164d40'; ctx.lineWidth = 10; ctx.strokeRect(22, 22, 1156, 656); ctx.strokeStyle = '#d9b65e'; ctx.lineWidth = 3; ctx.strokeRect(39, 39, 1122, 622)
+    const finish = () => {
+      ctx.fillStyle = '#174d40'; ctx.textAlign = 'center'; ctx.font = 'bold 46px Bornomala, "Noto Sans Bengali", sans-serif'; ctx.fillText('স্বপ্নতরী', 600, 100)
+      ctx.font = '24px Bornomala, "Noto Sans Bengali", sans-serif'; ctx.fillText('লক্ষ্য সুদূরপ্রসারী', 600, 140); ctx.fillStyle = '#b38a32'; ctx.fillRect(90, 168, 1020, 2)
+      ctx.fillStyle = '#154b3e'; ctx.font = 'bold 34px Bornomala, "Noto Sans Bengali", sans-serif'; ctx.fillText(receipt.kind === 'monthly' ? 'মাসিক সঞ্চয় জমার রসিদ' : 'বার্ষিক ফি জমার রসিদ', 600, 225)
+      ctx.textAlign = 'left'; ctx.fillStyle = '#5b7068'; ctx.font = '22px Bornomala, "Noto Sans Bengali", sans-serif'
+      const lines: [string,string][] = [['রসিদ নম্বর',receipt.receiptNumber],['সদস্যের নাম',receipt.memberName],['সদস্য নম্বর',receipt.memberNumber],['জমার সময়কাল',receipt.period],['জমার তারিখ',prettyDate(receipt.date)],['পরিশোধ পদ্ধতি',receipt.paymentMethod || '—'],['রেফারেন্স',receipt.reference || '—']]
+      lines.forEach(([label,value],i) => { const y=292+i*46; ctx.fillText(label,120,y); ctx.fillStyle='#263d35'; ctx.fillText(value,390,y); ctx.fillStyle='#5b7068' })
+      ctx.textAlign='right'; ctx.fillStyle='#154b3e'; ctx.font='bold 40px Bornomala, "Noto Sans Bengali", sans-serif'; ctx.fillText(`মোট জমা: ${fmt(receipt.amount)}`,1080,610)
+      ctx.textAlign='left'; ctx.fillStyle='#809188'; ctx.font='18px Bornomala, "Noto Sans Bengali", sans-serif'; ctx.fillText('এটি জমা সংরক্ষণের জন্য তৈরি ডিজিটাল রসিদ।',120,625)
+      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Receipt image could not be created')), 'image/png')
+    }
+    const logo = new Image(); logo.onload=()=>{ctx.drawImage(logo,75,65,92,92);finish()}; logo.onerror=finish; logo.src=logoUrl
+  })
+}
+async function shareReceipt(receipt: DepositReceipt) {
+  const blob = await makeReceiptImage(receipt)
+  const file = new File([blob], `${receipt.receiptNumber}.png`, { type: 'image/png' })
+  const message = `স্বপ্নতরী জমার রসিদ\n${receipt.memberName} (${receipt.memberNumber})\n${receipt.kind === 'monthly' ? 'মাসিক সঞ্চয়' : 'বার্ষিক ফি'}: ${fmt(receipt.amount)}\nরসিদ: ${receipt.receiptNumber}`
+  if (navigator.canShare?.({ files: [file] }) && navigator.share) await navigator.share({ files: [file], title: 'স্বপ্নতরী জমার রসিদ', text: message })
+  else { const link = document.createElement('a'); link.href=URL.createObjectURL(blob); link.download=file.name; link.click(); window.open(`https://wa.me/?text=${encodeURIComponent(message+'\nরসিদের ছবি ডাউনলোড করে এখানে যুক্ত করুন।')}`,'_blank','noopener,noreferrer') }
+}
 const membersField: FormField = { key: 'member_id', label: 'সদস্য', type: 'select', required: true }
 function ModulePage({ page, label, role, userId, email }: { page: string; label: string; role: string; userId: string; email: string }) {
   const [rows, setRows] = useState<Record<string, unknown>[]>([])
@@ -269,6 +297,7 @@ function ModulePage({ page, label, role, userId, email }: { page: string; label:
   const [searchQuery, setSearchQuery] = useState('')
   const [pageIndex, setPageIndex] = useState(0)
   const [totalRows, setTotalRows] = useState(0)
+  const [receipt, setReceipt] = useState<DepositReceipt | null>(null)
   const tablePages: TableKey[] = ['members', 'monthly_savings', 'annual_fees', 'financial_transactions', 'investments', 'qard_hasan_loans']
   const fields: Partial<Record<TableKey, FormField[]>> = {
     members: [{ key: 'full_name', label: 'পূর্ণ নাম', required: true }, { key: 'father_name', label: 'পিতার নাম' }, { key: 'mother_name', label: 'মাতার নাম' }, { key: 'mobile', label: 'মোবাইল নম্বর' }, { key: 'whatsapp', label: 'হোয়াটসঅ্যাপ নম্বর' }, { key: 'share_number', label: 'শেয়ার নম্বর', required: true }, { key: 'email', label: 'প্রধান Gmail', type: 'email' }, { key: 'joining_date', label: 'যোগদানের তারিখ', type: 'date', required: true }, { key: 'present_address', label: 'বর্তমান ঠিকানা' }, { key: 'permanent_address', label: 'স্থায়ী ঠিকানা' }, { key: 'notes', label: 'অতিরিক্ত তথ্য' }],
@@ -322,6 +351,7 @@ function ModulePage({ page, label, role, userId, email }: { page: string; label:
     setSaving(true); setError('')
     const form = new FormData(formElement)
     const payload = Object.fromEntries(form.entries()) as Record<string, string>
+    const receiptNumber = page === 'monthly_savings' ? `SWT-MS-${crypto.randomUUID()}` : `SWT-AF-${crypto.randomUUID()}`
     if (payload.member_id) { const chosen = members.find((m) => m.id === payload.member_id); if (!chosen) { setError('সদস্য বেছে নিন।'); setSaving(false); return } }
     try {
       let result: { error: { message: string } | null }
@@ -344,14 +374,18 @@ function ModulePage({ page, label, role, userId, email }: { page: string; label:
         }
       } else if (page === 'investments') result = await withTimeout(supabase.from('investments').insert({ ...payload, invested_amount: Number(payload.invested_amount), current_value: Number(payload.current_value), maturity_date: payload.maturity_date || null, notes: payload.notes || null, status: 'active', created_by: userId }))
       else if (page === 'qard_hasan_loans') result = await withTimeout(supabase.from('qard_hasan_loans').insert({ member_id: payload.member_id, principal_amount: Number(payload.principal_amount), outstanding_amount: Number(payload.principal_amount), disbursement_date: payload.disbursement_date, notes: payload.notes || null, status: 'active', approved_by: userId }))
-      else if (page === 'monthly_savings') result = await withTimeout(supabase.from('monthly_savings').insert({ ...payload, amount: Number(payload.amount), member_id: payload.member_id, receipt_number: `SWT-MS-${crypto.randomUUID()}`, created_by: userId }))
-      else if (page === 'annual_fees') result = await withTimeout(supabase.from('annual_fees').insert({ ...payload, amount: Number(payload.amount), receipt_number: `SWT-AF-${crypto.randomUUID()}`, created_by: userId }))
+      else if (page === 'monthly_savings') result = await withTimeout(supabase.from('monthly_savings').insert({ ...payload, amount: Number(payload.amount), member_id: payload.member_id, receipt_number: receiptNumber, created_by: userId }))
+      else if (page === 'annual_fees') result = await withTimeout(supabase.from('annual_fees').insert({ ...payload, amount: Number(payload.amount), receipt_number: receiptNumber, created_by: userId }))
       else result = await withTimeout(supabase.from('share_registry').insert({ ...payload, share_value: Number(payload.share_value), member_id: payload.member_id, created_by: userId }))
 
       if (result.error) {
         const duplicate = result.error.message.toLowerCase().includes('duplicate') || result.error.message.toLowerCase().includes('unique')
         setError(duplicate ? 'এই সদস্যের জন্য ওই মাস বা অর্থবছরের এন্ট্রি আগে থেকেই আছে। তালিকা রিফ্রেশ করুন; আবার জমা দেবেন না।' : 'তথ্য সংরক্ষণ হয়নি। প্রয়োজনীয় তথ্য ও ডেটাবেস নীতি যাচাই করুন।')
       } else {
+        if (page === 'monthly_savings' || page === 'annual_fees') {
+          const member = members.find((m) => m.id === payload.member_id)
+          if (member) setReceipt({ kind: page === 'monthly_savings' ? 'monthly' : 'annual', receiptNumber, memberName: member.full_name, memberNumber: member.member_id, amount: Number(payload.amount), date: payload.payment_date, period: page === 'monthly_savings' ? `${monthName(Number(payload.collection_month))} ${payload.collection_year}` : payload.financial_year, paymentMethod: payload.payment_method || '', reference: payload.reference_number || '' })
+        }
         setFormOpen(false); setEditing(null); formElement.reset(); setPageIndex(0); setSaving(false)
         void load(0).catch(() => setError('তথ্য সংরক্ষিত হয়েছে, তবে তালিকা আপডেট হয়নি। রিফ্রেশ করে দেখুন।'))
       }
@@ -425,6 +459,26 @@ function ModulePage({ page, label, role, userId, email }: { page: string; label:
     {error && <div className="notice error-notice">{error}</div>}
     {formOpen && currentFields && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) { setFormOpen(false); setEditing(null) } }}><section className="entry-modal"><div className="modal-heading"><div><b>{editing ? 'সদস্যের তথ্য সম্পাদনা' : `নতুন ${label}`}</b><span>{editing ? 'পরিবর্তন সংরক্ষণ করলে সদস্যের তথ্য হালনাগাদ হবে' : 'তথ্য সংরক্ষণ হলে ডেটাবেসে যুক্ত হবে'}</span></div><button className="close-modal" onClick={() => { setFormOpen(false); setEditing(null) }} aria-label="বন্ধ"><X size={18} /></button></div><form onSubmit={add} className="entry-form"><div className="field-grid">{currentFields.map((field) => <label key={field.key}>{field.label}{field.type === 'select' ? <select name={field.key} required={field.required} defaultValue="">{field.key === 'member_id' ? <><option value="">সদস্য বেছে নিন</option>{members.map((member) => <option value={member.id} key={member.id}>{member.member_id} · {member.full_name}</option>)}</> : <><option value="">নির্বাচন করুন</option>{field.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</>}</select> : <input name={field.key} type={field.type ?? 'text'} required={field.required} readOnly={Boolean(editing?.auth_user_id && field.key === 'email')} min={field.type === 'number' ? '0.01' : undefined} step={field.type === 'number' ? '0.01' : undefined} defaultValue={editing ? String(editing[field.key] ?? '') : field.key === 'joining_date' || field.key === 'payment_date' || field.key === 'issue_date' || field.key === 'start_date' || field.key === 'disbursement_date' ? new Date().toISOString().slice(0,10) : field.key === 'collection_month' ? String(new Date().getMonth()+1) : field.key === 'collection_year' ? String(new Date().getFullYear()) : undefined} />}</label>)}</div><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => { setFormOpen(false); setEditing(null) }}>বাতিল</button><button className="primary-button" disabled={saving}>{saving ? 'সংরক্ষণ হচ্ছে…' : 'সংরক্ষণ করুন'}</button></div></form></section></div>}
     {page === 'members' && <div className="member-help"><ShieldCheck size={18} /><span><b>সদস্যের লগইন:</b> সদস্য যোগের পর “লগইন লিংক পাঠান” চাপলে সদস্যের প্রধান Gmail-এ লিংক যাবে। অন্য Gmail যুক্ত করতে “বিকল্প Gmail যোগ” ব্যবহার করুন। সদস্যকে সরালে তার পরিচয় ও লগইন মুছবে, আর্থিক হিসাব পরিচয়হীনভাবে থাকবে।</span></div>}
+    {receipt && (
+      <div className="modal-backdrop receipt-backdrop">
+        <section className="receipt-dialog">
+          <div className="receipt-toolbar"><b>জমার রসিদ তৈরি হয়েছে</b><button className="close-modal" onClick={() => setReceipt(null)} aria-label="বন্ধ"><X size={18} /></button></div>
+          <article className="receipt-paper">
+            <div className="receipt-brand"><img src={logoUrl} alt="স্বপ্নতরী লোগো" /><div><h2>স্বপ্নতরী</h2><span>লক্ষ্য সুদূরপ্রসারী</span></div></div>
+            <div className="receipt-rule" />
+            <div className="receipt-title">{receipt.kind === 'monthly' ? 'মাসিক সঞ্চয় জমার রসিদ' : 'বার্ষিক ফি জমার রসিদ'}</div>
+            <div className="receipt-fields">
+              <span>রসিদ নম্বর</span><b>{receipt.receiptNumber}</b><span>সদস্যের নাম</span><b>{receipt.memberName}</b><span>সদস্য নম্বর</span><b>{receipt.memberNumber}</b><span>জমার সময়কাল</span><b>{receipt.period}</b><span>জমার তারিখ</span><b>{prettyDate(receipt.date)}</b><span>পরিশোধ পদ্ধতি</span><b>{receipt.paymentMethod || '—'}</b>
+              {receipt.reference && <><span>রেফারেন্স</span><b>{receipt.reference}</b></>}
+            </div>
+            <div className="receipt-total"><span>মোট জমা</span><strong>{fmt(receipt.amount)}</strong></div>
+            <div className="receipt-note">জমাটি প্রতিষ্ঠানের হিসাবে সংরক্ষিত হয়েছে। ধন্যবাদ।</div>
+          </article>
+          <div className="receipt-actions"><button className="secondary-button" onClick={() => window.print()}>প্রিন্ট / PDF</button><button className="primary-button" onClick={() => { void shareReceipt(receipt).catch(() => setError('রসিদ তৈরি হয়েছে, তবে শেয়ার মেনু খোলা যায়নি। প্রিন্ট/PDF ব্যবহার করুন।')) }}>WhatsApp-এ রসিদ পাঠান</button></div>
+          <p className="receipt-storage-note">রসিদটি এখানেই তৈরি; ছবি ডেটাবেসে আপলোড হবে না। WhatsApp শেয়ার মেনুতে অ্যাপ বেছে পাঠিয়ে দাও।</p>
+        </section>
+      </div>
+    )}
     <section className="panel records-panel"><div className="records-toolbar"><b>{label} তালিকা</b><input aria-label="সব রেকর্ডে খুঁজুন" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="সব রেকর্ডে খুঁজুন…" /><button className="secondary-button" onClick={() => void load()}>রিফ্রেশ</button></div><div className="table-scroll"><table><thead><tr>{currentColumns.map((col) => <th key={col.key}>{col.label}</th>)}{page === 'members' && <th>ব্যবস্থা</th>}</tr></thead><tbody>{visibleRows.map((row, index) => <tr key={String(row.id ?? index)}>{currentColumns.map((col) => <td key={col.key}>{col.money ? fmt(Number(row[col.key] ?? 0)) : col.key === 'member_id' && page !== 'members' ? (members.find((m) => m.id === row.member_id)?.member_id ?? String(row[col.key] ?? '').slice(0,8)) : displayValue(col.key, row[col.key])}</td>)}{page === 'members' && <td className="row-actions"><button className="row-action row-edit" onClick={() => { setEditing(row); setFormOpen(true) }}>সম্পাদনা</button><button className="row-action row-login" disabled={saving} onClick={() => void sendLoginLink(row)}>লগইন লিংক পাঠান</button><button className="row-action" disabled={saving} onClick={() => void manageLogin(row, false)}>বিকল্প Gmail যোগ</button><button className="row-action row-reactivate" disabled={saving} onClick={() => void manageLogin(row, true)}>Gmail বদলান</button><button className="row-action row-delete" disabled={saving} onClick={() => void deleteMember(row)}>স্থায়ীভাবে মুছুন</button></td>}</tr>)}</tbody></table>{loading ? <div className="table-empty">তথ্য আসছে…</div> : !visibleRows.length && <div className="table-empty">{search ? 'এই খোঁজে কোনো রেকর্ড নেই।' : 'এখনো কোনো তথ্য নেই। বাস্তব তথ্য যোগ হলে এখানে দেখা যাবে।'}</div>}</div><div className="pagination"><span>পাতা {new Intl.NumberFormat('bn-BD').format(pageIndex + 1)} / {new Intl.NumberFormat('bn-BD').format(Math.max(1, Math.ceil(totalRows / 100)))}</span><div><button className="secondary-button" disabled={pageIndex === 0 || loading} onClick={() => setPageIndex((n) => n - 1)}>আগের পাতা</button><button className="secondary-button" disabled={(pageIndex + 1) * 100 >= totalRows || loading} onClick={() => setPageIndex((n) => n + 1)}>পরের পাতা</button></div></div></section></>
 }
 
