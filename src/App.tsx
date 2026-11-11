@@ -77,7 +77,6 @@ export default function App() {
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
-  const [confirmationPending, setConfirmationPending] = useState(false)
   const [passwordRecovery, setPasswordRecovery] = useState(false)
   const [installPrompt, setInstallPrompt] = useState<Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> } | null>(null)
   const [installed, setInstalled] = useState(false)
@@ -188,6 +187,7 @@ export default function App() {
 
   const signIn = async (event: FormEvent) => {
     event.preventDefault(); if (!supabase) return
+    if (email.trim().toLowerCase() !== SUPER_ADMIN_EMAIL) { setError('সদস্যরা অনুমোদিত Gmail দিয়ে Google sign-in করবেন।'); return }
     setBusy(true); setError('')
     const { error: e } = await supabase.auth.signInWithPassword({ email, password })
     if (e) setError('লগইন হয়নি। ইমেইল ও পাসওয়ার্ড যাচাই করে আবার চেষ্টা করুন।')
@@ -208,27 +208,9 @@ export default function App() {
     if (oauthError) { sessionStorage.removeItem('swapnotori_google_login_email'); setError('Google দিয়ে লগইন চালু হয়নি। Supabase-এ Google sign-in সেটআপ যাচাই করুন।'); setBusy(false) }
   }
 
-  const signUp = async (event: FormEvent) => {
-    event.preventDefault(); if (!supabase) return
-    setBusy(true); setError(''); setNotice(''); setConfirmationPending(false)
-    const { data, error: signUpError } = await supabase.auth.signUp({ email: email.trim().toLowerCase(), password, options: { emailRedirectTo: authRedirectUrl } })
-    if (signUpError) setError('অ্যাকাউন্ট তৈরি হয়নি। Gmail-টি সুপার অ্যাডমিন সদস্যের জন্য অনুমোদন করেছেন কি না যাচাই করুন; আগে account থাকলে ইমেইল লগইন লিংক ব্যবহার করুন।')
-    else if (data.session) setNotice('অ্যাকাউন্ট তৈরি হয়েছে; আপনি লগইন করেছেন।')
-    else { setConfirmationPending(true); setNotice('নিশ্চিতকরণ লিংক Gmail-এ পাঠানো হয়েছে (SMS নয়)। Inbox, Spam/Junk ও Promotions দেখুন। লিংক খুলে account চালু করুন; না পেলে ১ মিনিট পর নিচের বোতামে আবার পাঠান।') }
-    setBusy(false)
-  }
-
-  const resendConfirmation = async () => {
-    if (!supabase || !email.trim()) { setError('আগে সেই Gmail ঠিকানাটি লিখুন।'); return }
-    setBusy(true); setError(''); setNotice('')
-    const { error: resendError } = await supabase.auth.resend({ type: 'signup', email: email.trim().toLowerCase(), options: { emailRedirectTo: authRedirectUrl } })
-    if (resendError) setError('নিশ্চিতকরণ email আবার পাঠানো যায়নি। Gmail ও অনুমোদন যাচাই করুন; কিছুক্ষণ পর আবার চেষ্টা করুন।')
-    else setNotice('নিশ্চিতকরণ email আবার পাঠানোর অনুরোধ হয়েছে। Inbox, Spam/Junk ও Promotions দেখুন।')
-    setBusy(false)
-  }
-
   const sendPasswordReset = async () => {
     if (!supabase || !email.trim()) { setError('আগে Gmail ঠিকানা লিখুন।'); return }
+    if (email.trim().toLowerCase() !== SUPER_ADMIN_EMAIL) { setError('সদস্যরা Google দিয়ে লগইন করবেন।'); return }
     setBusy(true); setError(''); setNotice('')
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo: authRedirectUrl })
     if (resetError) setError('পাসওয়ার্ড সেট করার লিংক পাঠানো যায়নি। Gmail ঠিকানা যাচাই করে আবার চেষ্টা করুন।')
@@ -244,18 +226,9 @@ export default function App() {
     return true
   }
 
-  const sendLoginLink = async () => {
-    if (!supabase || !email.trim()) { setError('আগে ইমেইল ঠিকানা লিখুন।'); return }
-    setBusy(true); setError(''); setNotice('')
-    const { error: e } = await supabase.auth.signInWithOtp({ email: email.trim().toLowerCase(), options: { emailRedirectTo: authRedirectUrl } })
-    if (e) setError('লগইন লিংক পাঠানো যায়নি। ইমেইল ঠিকানা যাচাই করে আবার চেষ্টা করুন।')
-    else setNotice('ইমেইলে নিরাপদ লগইন লিংক পাঠানো হয়েছে। লিংকে চাপ দিলেই অ্যাপে প্রবেশ হবে।')
-    setBusy(false)
-  }
-
   if (!supabaseConfigured) return <SetupNotice />
   if (passwordRecovery && session) return <PasswordRecovery onSave={saveRecoveredPassword} error={error} busy={busy} />
-  if (!session) return <Login email={email} password={password} busy={busy} error={error} notice={notice} confirmationPending={confirmationPending} onResendConfirmation={() => void resendConfirmation()} onGoogle={() => void signInWithGoogle()} onEmail={(value) => { setEmail(value); setConfirmationPending(false) }} onPassword={setPassword} onSubmit={signIn} onSignUp={signUp} onForgotPassword={() => void sendPasswordReset()} onSendLink={() => void sendLoginLink()} logo={logoUrl} installPrompt={installPrompt ? installApp : undefined} installed={installed} />
+  if (!session) return <Login email={email} password={password} busy={busy} error={error} notice={notice} onGoogle={() => void signInWithGoogle()} onEmail={setEmail} onPassword={setPassword} onSubmit={signIn} onForgotPassword={() => void sendPasswordReset()} onClearMessages={() => { setError(""); setNotice("") }} logo={logoUrl} installPrompt={installPrompt ? installApp : undefined} installed={installed} />
   if (!role) return <div className="center-message"><img src={logoUrl} alt="স্বপ্নতরী" /><p>{error || 'আপনার অ্যাকাউন্ট যাচাই হচ্ছে…'}</p><button className="text-button" onClick={() => void supabase?.auth.signOut()}>লগআউট</button></div>
 
   const selected = navigation.find((item) => item.page === page)
@@ -286,9 +259,16 @@ export default function App() {
 }
 
 function SetupNotice() { return <div className="setup-screen"><div className="setup-card"><img src={logoUrl} alt="স্বপ্নতরী" /><div className="eyebrow">প্রকল্প প্রস্তুত</div><h1>স্বপ্নতরী</h1><p>Supabase সংযোগ স্থাপন না হওয়া পর্যন্ত নিরাপদ লগইন ও বাস্তব হিসাব চালু হবে না।</p><div className="setup-step"><b>১.</b><span>Supabase Project Settings থেকে Project URL ও publishable anon key নিন।</span></div><div className="setup-step"><b>২.</b><span>প্রকল্পের মূল ফোল্ডারে <code>.env</code> ফাইলে মান দুটি বসান।</span></div><div className="setup-step"><b>৩.</b><span><code>supabase/migrations</code>-এর SQL Supabase SQL Editor-এ চালান।</span></div><div className="setup-warning"><ShieldCheck size={17} /> service role key কখনো frontend বা GitHub-এ রাখবেন না।</div></div></div> }
-function Login({ email, password, busy, error, notice, confirmationPending, onResendConfirmation, onGoogle, onEmail, onPassword, onSubmit, onSignUp, onForgotPassword, onSendLink, logo, installPrompt, installed }: { email: string; password: string; busy: boolean; error: string; notice: string; confirmationPending: boolean; onResendConfirmation: () => void; onGoogle: () => void; onEmail: (v: string) => void; onPassword: (v: string) => void; onSubmit: (e: FormEvent) => void; onSignUp: (e: FormEvent) => void; onForgotPassword: () => void; onSendLink: () => void; logo: string; installPrompt?: () => void; installed: boolean }) {
-  const [creating, setCreating] = useState(false)
-  return <div className="login-screen"><div className="login-aside"><div className="login-brand"><img src={logo} alt="" /><span>স্বপ্নতরী</span></div><div className="login-quote"><span>লক্ষ্য সুদূরপ্রসারী</span><h1>আজকের সঞ্চয়,<br />আগামী দিনের পুঁজি।</h1><p>একসাথে গড়ি একটি সুশৃঙ্খল ও সমৃদ্ধ আগামী।</p></div><small>স্বপ্নতরী · শেয়ারভিত্তিক প্রতিষ্ঠান</small></div><div className="login-form-wrap"><form className="login-form" onSubmit={creating ? onSignUp : onSubmit}><div className="eyebrow">{creating ? 'সদস্য অ্যাকাউন্ট তৈরি' : 'আপনার অ্যাকাউন্টে প্রবেশ করুন'}</div><h2>{creating ? 'সদস্য নিবন্ধন' : 'স্বাগতম'}</h2><p>{creating ? 'শুধু সুপার অ্যাডমিনের কাছে থাকা অনুমোদিত Gmail দিয়ে account তৈরি হবে।' : 'সদস্যরা অনুমোদিত Gmail দিয়ে Google sign-in করতে পারবেন; Super Admin আগের password ব্যবহার করবেন।'}</p>{error && <div className="notice error-notice">{error}</div>}{notice && <div className="notice success-notice">{notice}</div>}<label>Gmail ঠিকানা<input type="email" required autoComplete="username" value={email} onChange={(e) => onEmail(e.target.value)} placeholder="name@example.com" /></label>{!creating && <><button type="button" className="google-signin-button" onClick={onGoogle} disabled={busy}><span className="google-signin-mark">G</span><span>এই Gmail দিয়ে Google sign-in</span></button><div className="google-signin-hint">Google-এও একই, আগে অনুমোদিত Gmail বেছে নিন। অ্যাপের আলাদা password লাগবে না।</div><div className="login-divider"><span>অথবা password দিয়ে</span></div></>}<label>পাসওয়ার্ড<input type="password" required minLength={creating ? 8 : undefined} autoComplete={creating ? 'new-password' : 'current-password'} value={password} onChange={(e) => onPassword(e.target.value)} placeholder={creating ? 'কমপক্ষে ৮ অক্ষর' : 'আপনার পাসওয়ার্ড'} /></label>{confirmationPending && <button type="button" className="secondary-button full-width" onClick={onResendConfirmation} disabled={busy}>নিশ্চিতকরণ email আবার পাঠান</button>}<button className="primary-button full-width" disabled={busy}>{busy ? 'অপেক্ষা করুন…' : creating ? 'অ্যাকাউন্ট তৈরি করুন' : 'পাসওয়ার্ড দিয়ে লগইন'}</button>{!creating && <><button type="button" className="secondary-button full-width login-link-button" onClick={onSendLink} disabled={busy}>ইমেইলে লগইন লিংক পাঠান</button><button type="button" className="account-mode-button" onClick={onForgotPassword} disabled={busy}>পাসওয়ার্ড ভুলে গেছেন? নতুন password নিন</button></>}<button type="button" className="account-mode-button" disabled={busy} onClick={() => setCreating((value) => !value)}>{creating ? 'আগে account আছে? লগইন করুন' : 'নতুন সদস্য? account তৈরি করুন'}</button><span className="login-security"><ShieldCheck size={16} /> শুধু অনুমোদিত সদস্য Gmail গ্রহণ করা হবে</span>{installPrompt && <button type="button" className="install-login" onClick={installPrompt}><Download size={16} /> ফোনে অ্যাপ ইনস্টল করুন</button>}{installed && <span className="login-security">অ্যাপটি ফোনে ইনস্টল করা আছে</span>}<p className="install-hint">ইনস্টল বাটন না এলে Chrome-এর মেনু ⋮ খুলে <b>Install app</b> বা <b>Add to Home screen</b> চাপুন।</p></form></div></div>
+function Login({ email, password, busy, error, notice, onGoogle, onEmail, onPassword, onSubmit, onForgotPassword, onClearMessages, logo, installPrompt, installed }: { email: string; password: string; busy: boolean; error: string; notice: string; onGoogle: () => void; onEmail: (v: string) => void; onPassword: (v: string) => void; onSubmit: (e: FormEvent) => void; onForgotPassword: () => void; onClearMessages: () => void; logo: string; installPrompt?: () => void; installed: boolean }) {
+  const [passwordMode, setPasswordMode] = useState(false)
+  return <div className="login-screen"><div className="login-aside"><div className="login-brand"><img src={logo} alt="" /><span>স্বপ্নতরী</span></div><div className="login-quote"><span>লক্ষ্য সুদূরপ্রসারী</span><h1>আজকের সঞ্চয়,<br />আগামী দিনের পুঁজি।</h1><p>একসাথে গড়ি একটি সুশৃঙ্খল ও সমৃদ্ধ আগামী।</p></div><small>স্বপ্নতরী · শেয়ারভিত্তিক প্রতিষ্ঠান</small></div><div className="login-form-wrap"><form className="login-form login-form-compact" onSubmit={passwordMode ? onSubmit : (event) => event.preventDefault()}>
+    <div className="eyebrow">{passwordMode ? 'সুপার অ্যাডমিন' : 'সদস্য লগইন'}</div><h2>{passwordMode ? 'অ্যাডমিন প্রবেশ' : 'স্বাগতম'}</h2><p>{passwordMode ? 'নির্ধারিত অ্যাডমিন Gmail ও password ব্যবহার করুন।' : 'অনুমোদিত Gmail দিয়ে সহজে প্রবেশ করুন।'}</p>
+    {error && <div className="notice error-notice">{error}</div>}{notice && <div className="notice success-notice">{notice}</div>}
+    <label>{passwordMode ? 'সুপার অ্যাডমিন Gmail' : 'অনুমোদিত সদস্য Gmail'}<input type="email" required autoComplete="username" value={email} onChange={(e) => onEmail(e.target.value)} placeholder="name@example.com" /></label>
+    {passwordMode ? <><label>পাসওয়ার্ড<input type="password" required autoComplete="current-password" value={password} onChange={(e) => onPassword(e.target.value)} placeholder="আপনার পাসওয়ার্ড" /></label><button className="primary-button full-width" disabled={busy}>{busy ? 'অপেক্ষা করুন…' : 'পাসওয়ার্ড দিয়ে লগইন'}</button><button type="button" className="account-mode-button" onClick={onForgotPassword} disabled={busy}>পাসওয়ার্ড ভুলে গেছেন?</button><button type="button" className="account-mode-button" disabled={busy} onClick={() => { setPasswordMode(false); onPassword(""); onEmail(""); onClearMessages() }}>সদস্যের Google লগইনে ফিরুন</button></> : <><button type="button" className="google-signin-button" onClick={onGoogle} disabled={busy}><span className="google-signin-mark">G</span><span>{busy ? 'Google খুলছে…' : 'Google দিয়ে প্রবেশ করুন'}</span></button><div className="google-signin-hint">Google-এ একই অনুমোদিত Gmail বেছে নিন।</div><button type="button" className="account-mode-button admin-login-toggle" disabled={busy} onClick={() => { setPasswordMode(true); onEmail(SUPER_ADMIN_EMAIL); onPassword(""); onClearMessages() }}>সুপার অ্যাডমিন? password দিয়ে লগইন</button></>}
+    <span className="login-security"><ShieldCheck size={16} /> শুধু অনুমোদিত সদস্যের প্রবেশাধিকার</span>
+    {installPrompt && <button type="button" className="install-login" onClick={installPrompt}><Download size={16} /> ফোনে অ্যাপ ইনস্টল করুন</button>}{installed && <span className="login-security">অ্যাপটি ফোনে ইনস্টল করা আছে</span>}
+  </form></div></div>
 }
 function PasswordRecovery({ onSave, error, busy }: { onSave: (password: string) => Promise<boolean>; error: string; busy: boolean }) {
   const [password, setPassword] = useState(''); const [confirm, setConfirm] = useState(''); const [saving, setSaving] = useState(false)
