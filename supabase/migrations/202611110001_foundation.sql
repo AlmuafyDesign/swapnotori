@@ -1,5 +1,6 @@
 -- Swapnotori foundation. Run once in the Supabase SQL Editor.
 -- No seed/demo financial data is created by this migration.
+begin;
 create extension if not exists pgcrypto;
 
 create type public.app_role as enum ('super_admin', 'member');
@@ -344,3 +345,4 @@ grant execute on function public.post_financial_transaction(jsonb) to authentica
 
 -- Bootstrap first administrator manually after creating its Auth user:
 -- update public.profiles set role = 'super_admin' where email = 'admin@example.com';
+commit;
