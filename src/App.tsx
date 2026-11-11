@@ -96,7 +96,7 @@ export default function App() {
   }, [session])
 
   useEffect(() => {
-    if (role === 'member' && page !== 'dashboard') { setPage('dashboard'); setMenuOpen(false) }
+    if (role === 'member' && page !== 'dashboard' && page !== 'constitution') { setPage('dashboard'); setMenuOpen(false) }
   }, [role, page])
 
   useEffect(() => {
@@ -168,7 +168,7 @@ export default function App() {
     <aside className={`sidebar ${menuOpen ? 'sidebar-open' : ''}`}>
       <div className="brand"><img src={logoUrl} alt="স্বপ্নতরী লোগো" /><div><strong>স্বপ্নতরী</strong><span>লক্ষ্য সুদূরপ্রসারী</span></div><button className="close-menu" onClick={() => setMenuOpen(false)} aria-label="মেনু বন্ধ"><X size={19} /></button></div>
       <div className="workspace-label">প্রধান মেনু</div>
-      <nav>{navigation.filter((item) => role === 'super_admin' || ['dashboard'].includes(item.page)).map((item) => <div key={item.page}>{item.section && <div className="workspace-label nav-section">{item.section}</div>}<button className={`nav-item nav-${item.page} ${page === item.page ? 'active' : ''}`} onClick={() => { setPage(item.page); setMenuOpen(false) }}><item.icon size={18} strokeWidth={1.8} /><span>{item.label}</span>{page === item.page && <span className="active-dot" />}</button></div>)}</nav>
+      <nav>{navigation.filter((item) => role === 'super_admin' || ['dashboard', 'constitution'].includes(item.page)).map((item) => <div key={item.page}>{item.section && <div className="workspace-label nav-section">{item.section}</div>}<button className={`nav-item nav-${item.page} ${page === item.page ? 'active' : ''}`} onClick={() => { setPage(item.page); setMenuOpen(false) }}><item.icon size={18} strokeWidth={1.8} /><span>{item.label}</span>{page === item.page && <span className="active-dot" />}</button></div>)}</nav>
       <div className="sidebar-bottom"><div className="trust-card"><div className="trust-icon"><ShieldCheck size={17} /></div><div><b>নিরাপদ ও সুরক্ষিত</b><span>আপনার তথ্য সুরক্ষিত আছে</span></div></div><button className="nav-item" onClick={() => void supabase?.auth.signOut()}><LogOut size={18} /><span>লগআউট</span></button><small>স্বপ্নতরী · ২০২৬</small></div>
     </aside>
     {menuOpen && <button className="scrim" aria-label="মেনু বন্ধ" onClick={() => setMenuOpen(false)} />}
@@ -342,6 +342,7 @@ function ModulePage({ page, label, role }: { page: string; label: string; role: 
   }
     if (page === 'funds') return <FundModule label={label} />
   if (page === 'reports') return <ReportModule label={label} />
+  if (page === 'constitution') return <ConstitutionPage />
   if (!tablePages.includes(page as TableKey)) return <><div className="welcome-row"><div><div className="eyebrow">স্বপ্নতরী · ব্যবস্থাপনা</div><h1>{label}</h1><p>এই মডিউলটি প্রস্তুত করা বাকি।</p></div></div><section className="panel module-panel"><div className="module-empty"><div className="chart-mark"><LayoutDashboard size={23} /></div><h2>এই অংশটি এখনো প্রস্তুত নয়</h2><p>এখানে কোনো নমুনা হিসাব দেখানো হচ্ছে না। বাস্তব ডেটা ও নিরাপদ কার্যপ্রবাহ যুক্ত না হওয়া পর্যন্ত এই মডিউলটি বন্ধ আছে।</p></div></section></>
   return <><div className="welcome-row"><div><div className="eyebrow">স্বপ্নতরী · ব্যবস্থাপনা</div><h1>{label}</h1><p>ডেটাবেসে থাকা সব রেকর্ড · মোট {new Intl.NumberFormat('bn-BD').format(totalRows)}টি</p></div>{currentFields && role === 'super_admin' && <button className="primary-button" onClick={() => { setEditing(null); setFormOpen(true) }}><Plus size={17} /> নতুন যোগ করুন</button>}</div>
     {error && <div className="notice error-notice">{error}</div>}
@@ -408,3 +409,35 @@ function ReportModule({ label }: { label: string }) {
   return <><div className="welcome-row"><div><div className="eyebrow">স্বপ্নতরী · হিসাব</div><h1>{label}</h1><p>নির্বাচিত সময়ের বাস্তব ledger রিপোর্ট</p></div><button className="secondary-button" disabled={!rows.length} onClick={downloadCsv}>CSV ডাউনলোড</button></div><div className="report-filter panel"><label>শুরুর তারিখ<input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label><label>শেষ তারিখ<input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label><button className="primary-button" onClick={() => void load()}>{loading ? 'লোড হচ্ছে…' : 'রিপোর্ট দেখুন'}</button></div>{error && <div className="notice error-notice">{error}</div>}<div className="metrics-grid report-metrics">{[{ label: 'মোট আয়', value: income, tone: 'green' }, { label: 'মোট ব্যয়', value: expense, tone: 'rose' }, { label: 'তহবিল বরাদ্দ', value: funds, tone: 'gold' }, { label: 'নিট হিসাব', value: income - expense - funds, tone: 'blue' }].map((item) => <article className="metric-card" key={item.label}><span className="metric-label">{item.label}</span><strong>{loading ? '…' : fmt(item.value)}</strong><span className="metric-foot">{new Intl.NumberFormat('bn-BD').format(rows.length)}টি ledger এন্ট্রি</span></article>)}</div><section className="panel records-panel report-records"><div className="records-toolbar"><b>লেনদেনসমূহ</b><span>{prettyDate(from)} – {prettyDate(to)}</span></div><div className="table-scroll"><table><thead><tr><th>লেনদেন নম্বর</th><th>তারিখ</th><th>ধরন</th><th>খাত</th><th>পরিমাণ</th></tr></thead><tbody>{rows.map((row) => <tr key={row.transaction_number}><td>{row.transaction_number}</td><td>{prettyDate(row.transaction_date)}</td><td>{displayValue('transaction_type', row.transaction_type)}</td><td>{row.category}</td><td>{fmt(Number(row.amount))}</td></tr>)}</tbody></table>{loading ? <div className="table-empty">রিপোর্ট আসছে…</div> : !rows.length && <div className="table-empty">এই তারিখে কোনো লেনদেন নেই।</div>}</div></section></>
 }
 
+
+const constitutionArticles = [
+  ['সদস্যপদের মেয়াদ', 'স্বপ্নতরীর সর্বনিম্ন মেয়াদ ৫ বছর। ৫ বছরের পূর্বে সদস্যপদ থেকে অব্যাহতি নেবার সুযোগ নেই।'],
+  ['পরিষদ ও পরিচালনা', 'স্বপ্নতরী একটি সম্মিলিত ব্যবসা প্রতিষ্ঠান। সুদূরপ্রসারী এর লক্ষ্য-উদ্দেশ্য। কার্যক্রম সুষ্ঠুভাবে পরিচালনার জন্য নির্বাহী ও সাধারণ পরিষদ নামে দুটি পরিষদ থাকবে। পরিচালনার দায়িত্ব নির্বাহী পরিষদের, যার সদস্য থাকবেন পাঁচজন—চেয়ারম্যান, চিফ-চেয়ারম্যান, সচিব, সমন্বয়ক ও সদস্য প্রতিনিধি। নির্বাহী পরিষদের যাবতীয় কার্যক্রম ও কর্মসূচি সাধারণ পরিষদের হোয়াটসঅ্যাপ গ্রুপে বা সদস্যদের ইমেইলে প্রেরণ করা হবে।'],
+  ['শূরা ও কর্মপদ্ধতি', 'স্বপ্নতরী সকল প্রকার লবিং-তদবির, স্বজনপ্রীতি, দুর্নীতি এবং মেয়াদভিত্তিক নির্বাচনমুক্ত। শূরাভিত্তিক কর্মপদ্ধতি স্বপ্নতরীর চালিকাশক্তি। শূরা বা নির্বাহী পরিষদের দ্বন্দ্ব এড়াতে সকলের আন্তরিকতা এবং কল্যাণকামিতা থাকা বাঞ্ছনীয়।'],
+  ['ইসলামী ব্যবসা ও অংশীদারি', 'স্বপ্নতরীর ব্যবসা-বিনিয়োগ হবে ইসলামী বিধিনিষেধ অনুসারে। সদস্যদের শেয়ার অনুযায়ী (পারসেন্টেজ ও শতকরা হারে) লাভ-লোকসানের অধিকার এবং দায়ভার নির্ধারিত হবে।'],
+  ['সিদ্ধান্ত ও সম্প্রসারণ', 'যে কোনো পদক্ষেপ নির্বাহী পরিষদের মতামত ও সিদ্ধান্ত অনুযায়ী বিবেচ্য হবে। স্বপ্নতরীর অবকাঠামোমূলক সম্প্রসারণ (তথা মেয়াদ, বার্ষিক ফি ও শেয়ার বৃদ্ধি এবং কোম্পানি প্রতিষ্ঠা ইত্যাদি) সাধারণ পরিষদের এক-দ্বিতীয়াংশের সম্মতির ভিত্তিতে গৃহীত হবে।'],
+  ['বার্ষিক ফি', 'আগামী ৫ বছর (জুন ২০২৯ ঈ.) পর্যন্ত স্বপ্নতরীর বার্ষিক ফি ৫,০০০/- নির্ধারিত থাকবে।'],
+  ['লভ্যাংশ বণ্টন', 'লভ্যাংশের ৯৫% স্বপ্নতরীর সাধারণ তহবিলে এবং ৫% ‘খেদমতে খালক’ তহবিলের জন্য নির্ধারিত থাকবে।'],
+  ['দায়িত্ব ও আমানতদারি', 'কারো অভিজ্ঞতা ও যোগ্যতানুযায়ী নির্বাহী পরিষদ কর্তৃক স্বপ্নতরী সংক্রান্ত যেকোনো দায়িত্ব আমানত ও বিশ্বস্ততার সঙ্গে পালন করতে সচেষ্ট থাকবে।'],
+  ['বৈঠকে অংশগ্রহণ', 'স্বপ্নতরী সংক্রান্ত যে কোনো বৈঠক কিংবা ভার্চুয়াল মিটিংয়ে আমন্ত্রণ পাওয়ামাত্র যথাসময়ে উপস্থিত/যুক্ত হওয়া আবশ্যক।'],
+  ['করজে হাসানা / মুরাবাহা', 'প্রতি মেয়াদে যে কোনো সদস্য স্বপ্নতরীর সাধারণ তহবিল থেকে ৩ মাস মেয়াদে (সদস্যের আবেদন এবং নির্বাহী পরিষদের অনুমোদন ও নির্ধারিত শর্ত সাপেক্ষে) করজে হাসানা/মুরাবাহা চুক্তির সুযোগ পাবে। মুরাবাহা চুক্তির মেয়াদ, লভ্যাংশ এবং আদায়ের পদ্ধতি (তথা কিস্তি/এককালীন) ইত্যাদি গ্রহীতা ও নির্বাহী পরিষদের আলোচনা সাপেক্ষ।'],
+  ['লক্ষ্য-উদ্দেশ্যের সঙ্গে সংহতি', 'স্বপ্নতরীর লক্ষ্য-উদ্দেশ্য (তথা—দ্বীনি মহল ও আপামর উলামা সমাজের শক্তিশালী অর্থনৈতিক অবস্থানের মাধ্যমে সামাজিক নেতৃত্ব মজবুতকরণ, ভবিষ্যতে একটি সার্বজনীন কোম্পানি প্রতিষ্ঠা এবং হালাল পন্থায় স্বাবলম্বী হওয়া ইত্যাদি)র সঙ্গে পরিপূর্ণ সংহতি প্রকাশ ও আন্তরিক সহযোগী হওয়া আবশ্যক।'],
+]
+const qardPolicies = [
+  'কর্জে হাসানা হিসেবে ঋণ গ্রহণ করতে হলে সর্বোচ্চ দুই মাস মেয়াদে সর্বোচ্চ ১৫,০০০/- টাকা চেয়ে স্বপ্নতরীর সচিব বরাবর লিখিত আবেদন করতে হবে এবং চেয়ারম্যানের অনুমোদন নিতে হবে।',
+  'কর্জে হাসানা নির্দিষ্ট নিয়মানুযায়ী নিতে হবে এবং যথাসময়ে আদায় করতে হবে।',
+  'কর্জে হাসানার আবেদনের সময় ১০০/- টাকা (ব্যাংক ইত্যাদি বাবত) সার্ভিস ফি প্রদান করতে হবে।',
+  'কর্জে হাসানা নিয়ে যথাসময়ে আদায় না করলে পরবর্তীতে কর্জে হাসানার আবেদন করা যাবে না।',
+  'বার্ষিক ফি বা দুই মাসের মাসিক ফি অনাদায় থাকলে কর্জে হাসানার আবেদন করা যাবে না।',
+  'পূর্বে কর্জে হাসানা নিয়ে থাকলে দ্বিতীয়/তৃতীয় বার আবেদনের ক্ষেত্রে, কখনো কর্জে হাসানা গ্রহণের সুযোগ পাননি এমন সদস্য অগ্রাধিকার পাবেন।',
+  'কর্জে হাসানা সংক্রান্ত আবেদন করে সঙ্গত কারণে না পেলে মনখারাপ না করা।',
+]
+function ConstitutionPage() {
+  return <div className="constitution-page">
+    <section className="constitution-hero"><div className="constitution-seal"><BookOpen size={25} /></div><div className="constitution-bismillah">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div><div className="constitution-kicker">স্বপ্নতরী · দস্তুর ও গঠনতন্ত্র</div><h1>সংবিধান</h1><p>স্বপ্নতরী — একটি শেয়ারভিত্তিক ব্যবসা প্রতিষ্ঠান</p><div className="constitution-ornament"><span /><i>✦</i><span /></div><div className="constitution-hero-note">আমানত · শূরা · হালাল ব্যবসা</div></section>
+    <div className="constitution-highlights"><article><span>সর্বনিম্ন মেয়াদ</span><strong>৫ বছর</strong></article><article><span>বার্ষিক ফি</span><strong>৳৫,০০০</strong></article><article><span>সাধারণ তহবিল</span><strong>লভ্যাংশের ৯৫%</strong></article><article><span>খেদমতে খালক</span><strong>লভ্যাংশের ৫%</strong></article></div>
+    <section className="constitution-section"><div className="constitution-section-head"><span className="constitution-section-mark">০১</span><div><div className="eyebrow">প্রতিষ্ঠানের নীতিমালা</div><h2>দস্তুর ও গঠনতন্ত্র</h2><p>প্রতিষ্ঠানের পরিচালনা, সদস্যপদ ও দায়িত্বের মূলনীতি</p></div></div><div className="constitution-articles">{constitutionArticles.map(([title, text], index) => <article className="constitution-article" key={title}><div className="article-number">{new Intl.NumberFormat('bn-BD', { minimumIntegerDigits: 2 }).format(index + 1)}</div><div><h3>{title}</h3><p>{text}</p></div></article>)}</div></section>
+    <section className="qard-section"><div className="constitution-section-head"><span className="qard-section-mark"><HandCoins size={21} /></span><div><div className="eyebrow">সদস্য সহায়তা</div><h2>কর্জে হাসানা সংক্রান্ত নীতিমালা</h2><p>আবেদন, অনুমোদন ও পরিশোধের নিয়ম</p></div></div><div className="qard-limit-cards"><article><span>সর্বোচ্চ ঋণ</span><strong>৳১৫,০০০</strong></article><article><span>সর্বোচ্চ মেয়াদ</span><strong>২ মাস</strong></article><article><span>আবেদন ফি</span><strong>৳১০০</strong></article></div><ol className="qard-policy-list">{qardPolicies.map((policy, index) => <li key={policy}><span>{new Intl.NumberFormat('bn-BD').format(index + 1)}</span><p>{policy}</p></li>)}</ol></section>
+    <footer className="constitution-footer"><ShieldCheck size={18} /><span>স্বপ্নতরী · লক্ষ্য সুদূরপ্রসারী</span><i>সংবিধান ও দস্তুর</i></footer>
+  </div>
+}
